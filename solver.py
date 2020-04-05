@@ -541,6 +541,7 @@ class solver_api():
         engine doesn't re-calculate the zero'th element of the Langevin field.
         """
         if self.valid_solution:
+            
             # Set the initial magnetization to the final value
             self.a.x[0] = self.a.x[-1]
             self.a.y[0] = self.a.y[-1]
@@ -1509,66 +1510,7 @@ for n in range(1, len(d.ckeys)):
             continuous sinusoid over multiple iterations of the solver. 
         """
         return _n.cos(2*_n.pi*frequency_GHz*1e9*self.ts(n)+phase_rad)
-    
-    def gaussian_noise(self, mean=0, standard_deviation=1.0):
-        """
-        Returns an appropriately sized (self['steps']) array of random values
-        drawn from a Gaussian distribution of the specified mean and standard_deviation.
-        
-        Parameters
-        ----------
-        mean=0
-            Center of the distribution.
-        standard_deviation=1.0
-            Standard deviation of the distribution.
-        """
-        return _n.random.normal(mean, standard_deviation, self.settings['solver/steps'])
-        
-    def thermal_field_rms(self, domain='a'):
-        """
-        Returns an array of length self['steps'] containing random, uncorrelated 
-        fields [T], drawn from a Gaussian distribution appropriate for modeling
-        thermal fluctuations at temperature T_K [K] for the specified domain,
-        assuming a magnetic volume volume_nm3 [nm^3]. Note, that each component
-        of the magnetic field should have an independent langevin array added
-        to it to properly model thermal fluctuations (i.e., there should be
-        three calls to this function per domain, per simulation).
-        
-        IMPORTANT: If you're conducting a "continuous" simulation that uses
-        the last value of the previous run to initialize the first value of the 
-        next run, you will need to also overwrite the first value of the 
-        next langevin array with the last value of the previous run's array, 
-        or else the simulation is not consistent (the last value of the field
-        is used to calculate the last step).
-        
-        Parameters
-        ----------
-        domain='a'
-            Which domain receives the Langevin field The only domain-
-            specific parameters used are gyro and M.
-        
-        Returns
-        -------
-        """
-        return _n.sqrt(4*self.settings[domain+'/material/damping'] * kB*self['T'] \
-                     /  (self.settings[domain+'/material/gyro'] *              \
-                         self.settings[domain+'/material/M']/u0 *               \
-                         self['a/volume']*1e-27 *                               \
-                         self.settings['solver/dt']))
-    
-    def thermal_field(self, domain='a'):
-        """
-        Returns an array of size self['steps'] containing random values drawn
-        from a Gaussian distribution having standard deviation
-        self.thermal_field_rms(domain, T_K, volume_nm3).
-        
-        IMPORTANT: To keep the solver consistent when transferring the previous run's 
-        value to the initial condition of the current run, you must also transfer
-        the previous run's last thermal field values to the first value of the
-        current run.
-        """
-        return self.gaussian_noise()*self.thermal_field_rms(domain)
-    
+            
     def spin_torque_per_mA(self, domain='a', efficiency=1.0, volume_nm3=100*100*10):
         """
         Returns the torque per milliamp [rad/(s*mA)] that would be applied when
