@@ -63,7 +63,11 @@ def _to_pointer(numpy_array):
     if numpy_array is None: return None
     return numpy_array.ctypes.data_as(_c.POINTER(_c.c_double))
 
-
+def set_log_level(self, level=0):
+    """
+    Sets the log level for the engine.
+    """
+    _c.c_int.in_dll(_engine, 'log_level').value = level
 
 class _domain(_c.Structure):
     """
@@ -283,15 +287,28 @@ class solver_api():
     
     def __init__(self, **kwargs):
 
-        # Store the run parameters
+        # Store the default run parameters
         self.dt             = 1e-12
         self.steps          = 1e3
         self.continuous     = True
         self.valid_solution = False
-        
+        self.log_level      = 0
+                
         # Create the settings structure, and set the default values.
         self.a = _domain()
         self.b = _domain()
+
+        # Store the default magnetic parameters
+        self['T']       = 0
+        self['gyro']    = 1.76085963023e11
+        self['M']       = 1
+        self['V']       = 1000e-27
+        self['damping'] = 0.01
+        self['X']       = 0
+        self['STT']     = 0
+        self['Bx']      = 0
+        self['By']      = 0
+        self['Bz']      = 1
         
         # Initial conditions
         self.a.x0   = 1.0
@@ -358,6 +375,9 @@ class solver_api():
         self.a._Lx = self.a._Ly = self.a._Lz = None
         self.b._x  = self.b._y  = self.b._z  = None
         self.b._Lx = self.b._Ly = self.b._Lz = None
+        
+        # Send any supplied parameters
+        self.set_multiple(**kwargs)
         
     def set(self, key, value): 
         """
@@ -441,23 +461,16 @@ class solver_api():
     
     __getitem__ = get
     
-    def run(self):
+    def create_solution_arrays(self):
         """
-        Creates the solution arrays (self.a.x, self.a.Lx, etc) and runs 
-        the solver to fill them up. Afterward, the initial conditions are 
-        (by default) set to the last value of the solution arrays.
-        
-        Parameters
-        ----------
-        continuous_mode=True
-            If True, the initial conditions (self.a.x0, self.b.x0, ...) will be
-            set to the last value of the solution arrays. SEE ABOVE NOTE.
+        If no solution arrays exist, or their length does not match self['steps'],
+        create new ones and specify self['valid_solution'] = False, so we know
+        they are not valid solutions.
         """
-        self.steps = int(self.steps)
         
         # If no solution arrays exist or they are the wrong length, 
         # create new ones (and specify that there is no valid solution yet!)
-        if self.a.x == None                 \
+        if self.a.x is None                 \
         or not type(self.a.x) == _n.ndarray \
         or not  len(self.a.x) == self.steps:
             
@@ -471,27 +484,64 @@ class solver_api():
             self.b.z = _n.zeros(self.steps); self.b._z = _to_pointer(self.b.z)
             
             # Only create langevin arrays if the temperature is nonzero or 
-            if self['a/T']:
-                self.a.Lx  = _n.zeros(self.steps); self.a._Lx = _to_pointer(self.a.Lx)
-                self.a.Ly  = _n.zeros(self.steps); self.a._Ly = _to_pointer(self.a.Ly)
-                self.a.Lz  = _n.zeros(self.steps); self.a._Lz = _to_pointer(self.a.Lz)
-                self.a.n_langevin_valid = -1
-                
-            if self['b/T']:
-                self.b.Lx = _n.zeros(self.steps); self.b._Lx = _to_pointer(self.b.Lx)
-                self.b.Ly = _n.zeros(self.steps); self.b._Ly = _to_pointer(self.b.Ly)
-                self.b.Lz = _n.zeros(self.steps); self.b._Lz = _to_pointer(self.b.Lz)
-                self.b.n_langevin_valid = -1
+            self.a.Lx  = _n.zeros(self.steps); self.a._Lx = _to_pointer(self.a.Lx)
+            self.a.Ly  = _n.zeros(self.steps); self.a._Ly = _to_pointer(self.a.Ly)
+            self.a.Lz  = _n.zeros(self.steps); self.a._Lz = _to_pointer(self.a.Lz)
+            self.a.n_langevin_valid = -1
             
+            self.b.Lx = _n.zeros(self.steps); self.b._Lx = _to_pointer(self.b.Lx)
+            self.b.Ly = _n.zeros(self.steps); self.b._Ly = _to_pointer(self.b.Ly)
+            self.b.Lz = _n.zeros(self.steps); self.b._Lz = _to_pointer(self.b.Lz)
+            self.b.n_langevin_valid = -1
+        
             # Remember that we don't have a valid solution yet.
             self.valid_solution = False
+        
             
-        # If we have a valid previous solution and are in continuous mode,
-        # Set the initial values to the previous values
-        if self.continuous and self.valid_solution:
-            
-            # Set the initial magnetization to 
-            # the final value
+        # Otherwise, just use the arrays we've been using.
+        
+        return self
+    
+    def reset(self):
+        """
+        Resets the magnetization to the specified initial conditions.
+        
+        Specifically, this creates solution arrays if necessary, and then 
+        sets the first element as per self['a/x0'], self['a/y0'], etc.
+        Then sets n_langevin_valid = -1 for both domains, ensuring that 
+        the Langevin field will be calculated for index n=0 onward. 
+        Finally, sets self.valid_solution = False, because now the
+        current solution is not valid.
+        """
+        # If we don't have solution arrays, create them.
+        self.create_solution_arrays()
+        
+        # User-specified initial conditions
+        self.a.x[0] = self.a.x0
+        self.a.y[0] = self.a.y0
+        self.a.z[0] = self.a.z0
+        self.b.x[0] = self.b.x0
+        self.b.y[0] = self.b.y0
+        self.b.z[0] = self.b.z0
+        
+        # Make sure to calculate the first value of the langevin field
+        self.a.n_langevin_valid = -1
+        self.b.n_langevin_valid = -1
+        
+        # We don't have a valid solution
+        self.valid_solution = False
+        
+        return self
+    
+    def transfer_last_to_initial(self):
+        """
+        Sets the initial values of the magnetizations and Langevin fields
+        to the last element of the previously calculated arrays (if we have
+        a valid solution!). Also sets self.n_langevin_valid=0 so that the 
+        engine doesn't re-calculate the zero'th element of the Langevin field.
+        """
+        if self.valid_solution:
+            # Set the initial magnetization to the final value
             self.a.x[0] = self.a.x[-1]
             self.a.y[0] = self.a.y[-1]
             self.a.z[0] = self.a.z[-1]
@@ -499,33 +549,40 @@ class solver_api():
             self.b.y[0] = self.b.y[-1]
             self.b.z[0] = self.b.z[-1]
                         
-            # If we have a nonzero
-            if type(self['a/T']) == _n.ndarray or self['a/T']:
-                self.a.Lx[0] = self.a.Lx[-1]
-                self.a.Ly[0] = self.a.Ly[-1]
-                self.a.Lz[0] = self.a.Lz[-1]
-                self.a.n_langevin_valid = 0 # Engine won't calculate for n=0
+            # Do the same for Langevin components
+            self.a.Lx[0] = self.a.Lx[-1]
+            self.a.Ly[0] = self.a.Ly[-1]
+            self.a.Lz[0] = self.a.Lz[-1]
+            self.a.n_langevin_valid = 0 # Engine won't calculate for n=0
                 
-            if type(self['b/T']) == _n.ndarray or self['b/T']:
-                self.b.Lx[0] = self.b.Lx[-1]
-                self.b.Ly[0] = self.b.Ly[-1]
-                self.b.Lz[0] = self.b.Lz[-1]
-                self.a.n_langevin_valid = 0 # Engine won't calculate for n=0
-            
-        # Otherwise, we just reset everything
+            self.b.Lx[0] = self.b.Lx[-1]
+            self.b.Ly[0] = self.b.Ly[-1]
+            self.b.Lz[0] = self.b.Lz[-1]
+            self.a.n_langevin_valid = 0 # Engine won't calculate for n=0
+        
         else:
+            print("ERROR in transfer_last_to_initial(): no valid solution!")
+        
+        return self
+    
+    def run(self):
+        """
+        Creates the solution arrays (self.a.x, self.a.Lx, etc) and runs 
+        the solver to fill them up. Afterward, the initial conditions are 
+        (by default) set to the last value of the solution arrays.
+        """
+        self.steps = int(self.steps)
+        
+        # Create solution arrays
+        self.create_solution_arrays()
             
-            # User-specified initial conditions
-            self.a.x[0] = self.a.x0
-            self.a.y[0] = self.a.y0
-            self.a.z[0] = self.a.z0
-            self.b.x[0] = self.b.x0
-            self.b.y[0] = self.b.y0
-            self.b.z[0] = self.b.z0
-            
-            # Make sure to calculate the first value of the langevin field
-            self.a.n_langevin_valid = -1
-            self.b.n_langevin_valid = -1
+        # If we have a valid previous solution and are in continuous mode,
+        # Set the initial values to the last calculated values
+        if self.continuous and self.valid_solution: 
+            self.transfer_last_to_initial()
+        
+        # Otherwise, we just reset the solver
+        else: self.reset()
         
         # Really large exponents seem to slow this thing way down!
         # I think 100 digits of precision is a bit much anyway, but...
@@ -537,11 +594,11 @@ class solver_api():
         if abs(self.b.y[0]) < roundoff: self.b.y[0] = 0.0
         if abs(self.b.z[0]) < roundoff: self.b.z[0] = 0.0
 
-        
         # Solve it.
         _engine.solve_heun.restype = None
         _engine.solve_heun(_c.byref(self.a), _c.byref(self.b), 
-                           _c.c_double(self.dt), _c.c_int(self.steps))
+                           _c.c_double(self.dt), _c.c_long(self.steps),
+                           _c.c_int(self.log_level))
         
         # Let future runs know there is a valid solution for initialization
         self.valid_solution = True

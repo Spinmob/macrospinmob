@@ -32,7 +32,7 @@
 ///////////////////////////////////
 // LOG STUFF
 ///////////////////////////////////
-int log_level=4;
+int _log_level=4;
 FILE *log_file;
 
 
@@ -159,7 +159,6 @@ void log_step(domain *a, domain *b, long n) {
     fprintf(log_file, "  a->damping=%f, pointer=%p\n",     a->damping, a->dampings);
     fprintf(log_file, "  a->X=%f,       pointer=%p\n",     a->X,       a->Xs);
     fprintf(log_file, "  a->STT=%f,     pointer=%p\n",     a->STT,     a->STTs);
-
     fprintf(log_file, "\n");
 }
 
@@ -214,7 +213,7 @@ void get_input_parameters(domain *a, long n) {
 //   long n        The step at which to calculate.
 void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *dz) {
     
-    if(log_level >= 4) fprintf(log_file, "\nD() %li", n);
+    if(_log_level >= 4) fprintf(log_file, "D() %li %G\n", n, dt);
 
     // At each step (including intermediate steps), make sure to get 
     // the most current model input values from any supplied arrays.
@@ -244,7 +243,7 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
     // Initialization for the first step
     if(n==0) {
       
-      if(log_level >= 4) fprintf(log_file, "  initializing D variables\n");
+      if(_log_level >= 4) fprintf(log_file, "  Initializing Langevin\n");
     
       // Set all the "previous values" to zero, to trigger a new Langevin calculation
       langevin_prefactor = T = damping = gyro = M = V = 0;
@@ -255,8 +254,18 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
     By = a->By;
     Bz = a->Bz;
 
-    // If we have non-zero temperature, include the Langevin field
-    if(a->T > 0) {
+    // Easy if we have zero temperature.
+    if(a->T == 0) {
+      a->Lx[n] = 0;
+      a->Ly[n] = 0;
+      a->Lz[n] = 0;
+    } 
+    
+    // Otherwise, calculate the Langevin field
+    else {
+      if(_log_level >= 4) 
+        fprintf(log_file, "  T=%3f damp=%3f gyro=%3G M=%3f V=%3G\n", 
+                a->T, a->damping, a->gyro, a->M, a->V);
 
       // Only calculate a new value if we haven't already done so for this index
       if(n > a->n_langevin_valid) {
@@ -273,6 +282,8 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
 
           // Calculate the prefactor
           langevin_prefactor = sqrt( 4*u0*damping*kB*T / (gyro*M*V*dt) );
+          
+          if(_log_level >= 4) fprintf(log_file, "  langevin_prefactor=%3G\n", langevin_prefactor);
         } 
         
         // Now calculate the langevin field for this step
@@ -282,13 +293,16 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
         
         // If we come back to this value of n, we will use the existing value.
         a->n_langevin_valid = n;
+
+        if(_log_level >= 4) fprintf(log_file, "  n_langevin_valid=%li Lx=%3G\n", a->n_langevin_valid, a->Lx[n]);
       }
 
       // Now add the Langevin field from this index to the magnetic field
       Bx += a->Lx[n];
       By += a->Ly[n];
       Bz += a->Lz[n];
-    }
+    
+    } // End of T>0
 
     // Calculate the aNisotropy field
     Nx = -a->M*(a->Nxx*a->x[n] + a->Nxy*a->y[n] + a->Nxz*a->z[n]);
@@ -329,12 +343,13 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
 // SOLVER
 ///////////////////////////////////
 
-void solve_heun(domain *a, domain *b, double dt, long steps) {
-  
+void solve_heun(domain *a, domain *b, double dt, long steps, int log_level) {
+  _log_level = log_level;
+
   // Log file
-  if(log_level > 0) {
+  if(_log_level > 0) {
     log_file = fopen("engine.log", "w");
-    fprintf(log_file, "solve_heun() beings\n------------------------------------------------\n\n");
+    fprintf(log_file, "\n\nsolve_heun() beings\n------------------------------------------------\n\n");
     log_step(a,b,0);
   }
 
@@ -363,12 +378,13 @@ void solve_heun(domain *a, domain *b, double dt, long steps) {
   double adx1, ady1, adz1, bdx1, bdy1, bdz1;
   double adx2, ady2, adz2, bdx2, bdy2, bdz2;
   
-  if(log_level >=1) fprintf(log_file, "STARTING LOOP: steps=%li\n", steps);
+  if(_log_level >=1) fprintf(log_file, "STARTING LOOP: steps=%li\n", steps);
 
   // Now do the Heun loop
   // We don't go to the end because we don't want to overwrite the first step.
   for(long n=0; n<=steps-2; n++) {
-   
+    if(_log_level >= 4) fprintf(log_file, "\nn=%li -------\n", n);
+
     //  Heun method: with our derivative step dy(y,n), we calculate intermediate value
     //
     //    yi[n+1] = y[n] + dy(y,n)
@@ -384,8 +400,6 @@ void solve_heun(domain *a, domain *b, double dt, long steps) {
     D(a, b, n, dt, &adx1, &ady1, &adz1);
     D(b, a, n, dt, &bdx1, &bdy1, &bdz1);
 
-    if(log_level >= 3 && (n % (long)(steps/5) == 0 || n<5 || steps-n<7)) log_step(a, b, n);
-    
     // Store the intermediate value yi at n+1
     a->x[n+1] = a->x[n] + adx1; 
     a->y[n+1] = a->y[n] + ady1; 
@@ -424,8 +438,8 @@ void solve_heun(domain *a, domain *b, double dt, long steps) {
   } // End of for loop.
 
   // At this point, the whole solution arrays should be populated.
-  if(log_level>0) {
-    fprintf(log_file, "\n\n------------------------------------------------\nsolve_heun() done after %li", time(0)-t0);
+  if(_log_level>0) {
+    fprintf(log_file, "\n\n------------------------------------------------\nsolve_heun() done after %li\n\n", time(0)-t0);
     fclose(log_file);
   }
 }
