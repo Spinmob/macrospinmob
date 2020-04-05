@@ -30,7 +30,7 @@ me   = 9.1093837015e-31 # Electron mass [kg]
 hbar = 1.0545718e-34    # [m^2 kg/s | J s]
 uB   = 9.274009994e-24  # Bohr magneton [J/T]
 c    = 299792458.0      # Speed of light [m/s]
-kB   = 1.38064852e-23   # Boltzmann constant [J/K]
+kB   = 1.380649e-23   # Boltzmann constant [J/K]
 
 ## TO DO: Get check boxes working!
 
@@ -74,16 +74,28 @@ class _domain(_c.Structure):
     # NOTE: The order here and structure here REALLY has to match the struct 
     # in the C-code! This class will be sent by reference, and the c-code 
     # will expect everything to be in its place.
+    
+    # We use underscores on the array pointers, so that the solver_api can 
+    # store the numpy arrays without them for easy user interfacing.
     _fields_ = [
         
+        # Index of valid Langevin field
+        ('n_langevin_valid', _c.c_long),
+        
+        # Temperature [K]
+        ('T', _c.c_double), ("_Ts", _c.POINTER(_c.c_double)),
+        
+        # Volume of domain [m^3]
+        ('V', _c.c_double), ("_Vs", _c.POINTER(_c.c_double)),
+        
         # Magnitude of the gyromagnetic ratio [radians / (sec T)]
-        ('gamma', _c.c_double), ("_gammas", _c.POINTER(_c.c_double)),
+        ('gyro', _c.c_double), ("_gyros", _c.POINTER(_c.c_double)),
         
         #Gilbert damping parameter [unitless]
         ('M', _c.c_double), ("_Ms", _c.POINTER(_c.c_double)),
         
         # Gilbert damping
-        ('alpha', _c.c_double), ('_alphas', _c.POINTER(_c.c_double)),
+        ('damping', _c.c_double), ('_dampings', _c.POINTER(_c.c_double)),
         
         # Exchange-like field strength [T], applied in the direction of the other domain's unit vector
         ('X', _c.c_double), ('_Xs', _c.POINTER(_c.c_double)),
@@ -91,10 +103,10 @@ class _domain(_c.Structure):
         # Spin transfer torque (rate) parallel to other domain [rad / s]
         ('STT', _c.c_double), ('_STTs', _c.POINTER(_c.c_double)),
         
-        # Other torque (rate) unrelated to either domain [rad / s]
-        ('Tx', _c.c_double), ('_Txs', _c.POINTER(_c.c_double)),
-        ('Ty', _c.c_double), ('_Tys', _c.POINTER(_c.c_double)),
-        ('Tz', _c.c_double), ('_Tzs', _c.POINTER(_c.c_double)),
+        # Other torQues (rate) unrelated to either domain [rad / s]
+        ('Qx', _c.c_double), ('_Qxs', _c.POINTER(_c.c_double)),
+        ('Qy', _c.c_double), ('_Qys', _c.POINTER(_c.c_double)),
+        ('Qz', _c.c_double), ('_Qzs', _c.POINTER(_c.c_double)),
         
         # Externally applied field
         ('Bx', _c.c_double), ('_Bxs', _c.POINTER(_c.c_double)),
@@ -140,14 +152,19 @@ class _domain(_c.Structure):
         ('_y', _c.POINTER(_c.c_double)),
         ('_z', _c.POINTER(_c.c_double)),
         
+        # Calculated Langevin fields
+        ('_Lx', _c.POINTER(_c.c_double)),
+        ('_Ly', _c.POINTER(_c.c_double)),
+        ('_Lz', _c.POINTER(_c.c_double)),
+        
     ] # End of _data structure
     
     def keys(self):
         """
         Returns a list of keys that can be used in set() or get().
         """
-        return ['x0', 'y0', 'z0', 'gamma', 'M', 'alpha', 'X', 'STT',
-                'Tx', 'Ty', 'Tz', 'Bx', 'By', 'Bz',
+        return ['T', 'V', 'x0', 'y0', 'z0', 'gyro', 'M', 'damping', 'X', 'STT',
+                'Qx', 'Qy', 'Qz', 'Bx', 'By', 'Bz',
                 'Nxx', 'Nxy', 'Nxz', 'Nyx', 'Nyy', 'Nyz', 'Nzx', 'Nzy', 'Nzz',
                 'Dxx', 'Dxy', 'Dxz', 'Dyx', 'Dyy', 'Dyz', 'Dzx', 'Dzy', 'Dzz',
                 'mode']
@@ -169,7 +186,7 @@ class _domain(_c.Structure):
         
         Example
         -------
-        my_solver.a.set(By=numpy.linspace(0,5,my_solver.steps), gamma=27)
+        my_solver.a.set(By=numpy.linspace(0,5,my_solver.steps), gyro=27)
 
         Returns
         -------
@@ -189,7 +206,7 @@ class _domain(_c.Structure):
         # Otherwise it's a number, so we need to kill the old pointer and
         # array
         else: 
-            exec('self.'+key+'=v', dict(self=self,v=value))
+            exec('self.' +key+'=v', dict(self=self,v=value))
             exec('self.' +key+'s=None', dict(self=self)) # Local copy
             exec('self._'+key+"s=None", dict(self=self)) # Converted copy
             
@@ -224,9 +241,9 @@ class _domain(_c.Structure):
         """
         This sets all array pointers to NULL (None).
         """
-        self['gamma'] = self.gamma
+        self['gyro'] = self.gyro
         self['M']     = self.M
-        self['alpha'] = self.alpha
+        self['damping'] = self.damping
         self['X']     = self.X
         self['STT']   = self.STT
         
@@ -260,17 +277,17 @@ class _domain(_c.Structure):
 class solver_api():
     """
     Scripted interface for the solver engine. 
-    
-    kwargs are sent to self.set_multiple(**kwargs)
     """
     
-    _solver_keys  = ['dt', 'steps']
+    _solver_keys  = ['dt', 'steps', 'continuous']
     
     def __init__(self, **kwargs):
 
         # Store the run parameters
-        self.dt    = 1e-12
-        self.steps = 1e3
+        self.dt             = 1e-12
+        self.steps          = 1e3
+        self.continuous     = True
+        self.valid_solution = False
         
         # Create the settings structure, and set the default values.
         self.a = _domain()
@@ -283,22 +300,34 @@ class solver_api():
         self.b.x0   = 1.0
         self.b.y0   = 0.0
         self.b.z0   = 0.0
+        
+        # Solution arrays
+        self.a.x = self.a.y = self.a.z = None
+        self.b.x = self.b.y = self.b.z = None
+        self.a.Lx = self.a.Ly = self.a.Lz = None
+        self.b.Lx = self.b.Ly = self.b.Lz = None
+        
+        # Index up to which the langevin field has been calculated
+        self.a.n_langevin_valid = -1
+        self.b.n_langevin_valid = -1
 
         # Null all the array pointers, just to be safe 
         # (different platforms, Python versions, etc...)
-        self.a._gammas = self.b._gammas = None
-        self.a._Ms     = self.b._Ms     = None
-        self.a._alphas = self.b._alphas = None
-        self.a._Xs     = self.b._Xs     = None
-        self.a._STTs   = self.b._STTs   = None
+        self.a._Ts       = self.b._Ts       = None
+        self.a._Vs       = self.b._Vs       = None
+        self.a._gyros    = self.b._gyros    = None
+        self.a._Ms       = self.b._Ms       = None
+        self.a._dampings = self.b._dampings = None
+        self.a._Xs       = self.b._Xs       = None
+        self.a._STTs     = self.b._STTs     = None
         
         self.a._Bxs    = self.b._Bxs    = None
         self.a._Bys    = self.b._Bys    = None
         self.a._Bzs    = self.b._Bzs    = None
         
-        self.a._Txs    = self.b._Txs    = None
-        self.a._Tys    = self.b._Tys    = None
-        self.a._Tzs    = self.b._Tzs    = None
+        self.a._Qxs    = self.b._Qxs    = None
+        self.a._Qys    = self.b._Qys    = None
+        self.a._Qzs    = self.b._Qzs    = None
         
         self.a._Nxxs   = self.b._Nxxs   = None
         self.a._Nxys   = self.b._Nxys   = None
@@ -324,17 +353,16 @@ class solver_api():
         self.a.mode=1
         self.b.mode=1
         
-        # No arrays initially
-        self.ax = self.ay = self.az = None
-        self.bx = self.by = self.bz = None
-        
-        # Send kwargs
-        self.set_multiple(**kwargs)
+        # No solution arrays initially
+        self.a._x  = self.a._y  = self.a._z  = None
+        self.a._Lx = self.a._Ly = self.a._Lz = None
+        self.b._x  = self.b._y  = self.b._z  = None
+        self.b._Lx = self.b._Ly = self.b._Lz = None
         
     def set(self, key, value): 
         """
-        Sets a parameter for the solver. Magnetic parameters, e.g., 'gamma' will
-        be applied to both domains.
+        Sets a parameter for the solver. Magnetic parameters without a domain
+        specified, e.g., 'gyro' (not 'a/gyro') will be applied to both domains.
 
         Parameters
         ----------
@@ -345,7 +373,7 @@ class solver_api():
         
         Example
         -------
-        my_solver.a.set(By=numpy.linspace(0,5,my_solver.steps), gamma=27)
+        my_solver.a.set(By=numpy.linspace(0,5,my_solver.steps), gyro=27)
 
         Returns
         -------
@@ -354,7 +382,7 @@ class solver_api():
         """
         s = key.split('/')
         
-        # If it's a property of the solver, store it in the solver
+        # If it's a property of the solver [dt, steps], store it in the solver
         if key in self._solver_keys:
             exec('self.'+key+"=v", dict(self=self,v=value))
     
@@ -413,19 +441,11 @@ class solver_api():
     
     __getitem__ = get
     
-    def run(self, continuous_mode=False):
+    def run(self):
         """
-        Creates the solution arrays and runs the solver to fill them up.
-        Afterward, the initial conditions are (by default) set to the 
-        last value of the solution arrays.
-        
-        NOTE: BE CAREFUL about continuous_mode=True. This will ONLY
-        transfer the 6 magnetization components, not the other arrays you have
-        specified. For example, if you're using a Langevin (randomly fluctuating)
-        field, you will need to transfer the last element of the field arrays to 
-        the first element of the subsequent run's arrays manually, to maintain
-        a consistent / continuous simulation. The last value of any user-
-        specified array is used to calculate the last step.
+        Creates the solution arrays (self.a.x, self.a.Lx, etc) and runs 
+        the solver to fill them up. Afterward, the initial conditions are 
+        (by default) set to the last value of the solution arrays.
         
         Parameters
         ----------
@@ -435,55 +455,96 @@ class solver_api():
         """
         self.steps = int(self.steps)
         
-        # Create the solution arrays if we need to
-        if not type(self.ax) == _n.ndarray or not len(self.ax) == self.steps:
-            self.ax = _n.zeros(self.steps); self.ax[0] = self.a.x0
-            self.ay = _n.zeros(self.steps); self.ay[0] = self.a.y0
-            self.az = _n.zeros(self.steps); self.az[0] = self.a.z0
-            self.bx = _n.zeros(self.steps); self.bx[0] = self.b.x0
-            self.by = _n.zeros(self.steps); self.by[0] = self.b.y0
-            self.bz = _n.zeros(self.steps); self.bz[0] = self.b.z0
-        
-            # Provide the c-code with access to the array data
-            self.a._x = _to_pointer(self.ax)
-            self.a._y = _to_pointer(self.ay)
-            self.a._z = _to_pointer(self.az)
-            self.b._x = _to_pointer(self.bx)
-            self.b._y = _to_pointer(self.by)
-            self.b._z = _to_pointer(self.bz)
-        
-        # Set the initial condition
-        self.ax[0] = self.a.x0
-        self.ay[0] = self.a.y0
-        self.az[0] = self.a.z0
-        self.bx[0] = self.b.x0
-        self.by[0] = self.b.y0
-        self.bz[0] = self.b.z0
+        # If no solution arrays exist or they are the wrong length, 
+        # create new ones (and specify that there is no valid solution yet!)
+        if self.a.x == None                 \
+        or not type(self.a.x) == _n.ndarray \
+        or not  len(self.a.x) == self.steps:
             
+            # Create a bunch of zeros arrays for the solver to fill.
+            # Also get the pointer to these arrays for the solver engine.
+            self.a.x = _n.zeros(self.steps); self.a._x = _to_pointer(self.a.x)
+            self.a.y = _n.zeros(self.steps); self.a._y = _to_pointer(self.a.y)
+            self.a.z = _n.zeros(self.steps); self.a._z = _to_pointer(self.a.z)
+            self.b.x = _n.zeros(self.steps); self.b._x = _to_pointer(self.b.x)
+            self.b.y = _n.zeros(self.steps); self.b._y = _to_pointer(self.b.y)
+            self.b.z = _n.zeros(self.steps); self.b._z = _to_pointer(self.b.z)
+            
+            # Only create langevin arrays if the temperature is nonzero or 
+            if self['a/T']:
+                self.a.Lx  = _n.zeros(self.steps); self.a._Lx = _to_pointer(self.a.Lx)
+                self.a.Ly  = _n.zeros(self.steps); self.a._Ly = _to_pointer(self.a.Ly)
+                self.a.Lz  = _n.zeros(self.steps); self.a._Lz = _to_pointer(self.a.Lz)
+                self.a.n_langevin_valid = -1
+                
+            if self['b/T']:
+                self.b.Lx = _n.zeros(self.steps); self.b._Lx = _to_pointer(self.b.Lx)
+                self.b.Ly = _n.zeros(self.steps); self.b._Ly = _to_pointer(self.b.Ly)
+                self.b.Lz = _n.zeros(self.steps); self.b._Lz = _to_pointer(self.b.Lz)
+                self.b.n_langevin_valid = -1
+            
+            # Remember that we don't have a valid solution yet.
+            self.valid_solution = False
+            
+        # If we have a valid previous solution and are in continuous mode,
+        # Set the initial values to the previous values
+        if self.continuous and self.valid_solution:
+            
+            # Set the initial magnetization to 
+            # the final value
+            self.a.x[0] = self.a.x[-1]
+            self.a.y[0] = self.a.y[-1]
+            self.a.z[0] = self.a.z[-1]
+            self.b.x[0] = self.b.x[-1]
+            self.b.y[0] = self.b.y[-1]
+            self.b.z[0] = self.b.z[-1]
+                        
+            # If we have a nonzero
+            if type(self['a/T']) == _n.ndarray or self['a/T']:
+                self.a.Lx[0] = self.a.Lx[-1]
+                self.a.Ly[0] = self.a.Ly[-1]
+                self.a.Lz[0] = self.a.Lz[-1]
+                self.a.n_langevin_valid = 0 # Engine won't calculate for n=0
+                
+            if type(self['b/T']) == _n.ndarray or self['b/T']:
+                self.b.Lx[0] = self.b.Lx[-1]
+                self.b.Ly[0] = self.b.Ly[-1]
+                self.b.Lz[0] = self.b.Lz[-1]
+                self.a.n_langevin_valid = 0 # Engine won't calculate for n=0
+            
+        # Otherwise, we just reset everything
+        else:
+            
+            # User-specified initial conditions
+            self.a.x[0] = self.a.x0
+            self.a.y[0] = self.a.y0
+            self.a.z[0] = self.a.z0
+            self.b.x[0] = self.b.x0
+            self.b.y[0] = self.b.y0
+            self.b.z[0] = self.b.z0
+            
+            # Make sure to calculate the first value of the langevin field
+            self.a.n_langevin_valid = -1
+            self.b.n_langevin_valid = -1
+        
+        # Really large exponents seem to slow this thing way down!
+        # I think 100 digits of precision is a bit much anyway, but...
+        roundoff = 1e-200
+        if abs(self.a.x[0]) < roundoff: self.a.x[0] = 0.0
+        if abs(self.a.y[0]) < roundoff: self.a.y[0] = 0.0
+        if abs(self.a.z[0]) < roundoff: self.a.z[0] = 0.0
+        if abs(self.b.x[0]) < roundoff: self.b.x[0] = 0.0
+        if abs(self.b.y[0]) < roundoff: self.b.y[0] = 0.0
+        if abs(self.b.z[0]) < roundoff: self.b.z[0] = 0.0
+
+        
         # Solve it.
         _engine.solve_heun.restype = None
         _engine.solve_heun(_c.byref(self.a), _c.byref(self.b), 
                            _c.c_double(self.dt), _c.c_int(self.steps))
         
-        # Set the initial conditions for the next run
-        if continuous_mode:
-            
-            self.a.x0 = self.ax[-1]
-            self.a.y0 = self.ay[-1]
-            self.a.z0 = self.az[-1]
-            self.b.x0 = self.bx[-1]
-            self.b.y0 = self.by[-1]
-            self.b.z0 = self.bz[-1]
-            
-            # Really large exponents seem to slow this thing way down!
-            # I think 100 digits of precision is a bit too much, but...
-            roundoff = 1e-200
-            if abs(self.a.x0) < roundoff: self.a.x0 = 0.0
-            if abs(self.a.y0) < roundoff: self.a.y0 = 0.0
-            if abs(self.a.z0) < roundoff: self.a.z0 = 0.0
-            if abs(self.b.x0) < roundoff: self.b.x0 = 0.0
-            if abs(self.b.y0) < roundoff: self.b.y0 = 0.0
-            if abs(self.b.z0) < roundoff: self.b.z0 = 0.0
+        # Let future runs know there is a valid solution for initialization
+        self.valid_solution = True
             
         return self
 
@@ -492,12 +553,9 @@ class solver():
     """
     Graphical and scripted interface for the solver_api. Creating an instance
     should pop up a graphical interface.
-    
-    kwargs are sent to self.set_multiple(**kwargs), but you'll have to use a 
-    dictionary, e.g. **{'a/material/gamma':176e9} for the non-simple parameters
     """    
     
-    def __init__(self, **kwargs):
+    def __init__(self):
         
         # For benchmarking
         self._t0  = 0
@@ -526,28 +584,36 @@ class solver():
         
         self._a_M      = None
         self._a_volume = None
-        self._a_gamma  = None
-        self._a_alpha  = None
+        self._a_gyro  = None
+        self._a_damping  = None
         
         self._b_M      = None
         self._b_volume = None
-        self._b_gamma  = None
-        self._b_alpha  = None
+        self._b_gyro  = None
+        self._b_damping  = None
+        
+        # Set up the GUI
+        self._build_gui()
+    
+    def _build_gui(self):
+        """
+        Creates the window, puts all the widgets in there, and then shows it.
+        """
         
         # Graphical interface
         self.window = _g.Window(title='Macrospin(mob)', autosettings_path='solver.window.txt', size=[1000,550])
         
         # Top row controls for the "go" button, etc
-        self.grid_top          = self.window  .place_object(_g.GridLayout(False), alignment=1) 
-        self.button_run         = self.grid_top.place_object(_g.Button('Go!', True))
-        self.label_iteration   = self.grid_top.place_object(_g.Label(''))
+        self.grid_top          = self.window  .add(_g.GridLayout(False), alignment=1) 
+        self.button_run         = self.grid_top.add(_g.Button('Go!', True))
+        self.label_iteration   = self.grid_top.add(_g.Label(''))
         
         # Bottom row controls for settings and plots.
         self.window.new_autorow()
-        self.grid_bottom  = self.window     .place_object(_g.GridLayout(False), alignment=0)
+        self.grid_bottom  = self.window     .add(_g.GridLayout(False), alignment=0)
         
         # Settings
-        self.settings     = self.grid_bottom.place_object(_g.TreeDictionary(autosettings_path='solver.settings.txt'))
+        self.settings     = self.grid_bottom.add(_g.TreeDictionary(autosettings_path='solver.settings.txt')).set_width(210)
         
         self.settings.add_parameter('solver/iterations', 0, limits=(0,None))
         self.settings.add_parameter('solver/dt',    1e-12, dec=True,                  siPrefix=True, suffix='s')
@@ -561,10 +627,10 @@ class solver():
         self.settings.add_parameter('a/initial_condition/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('a/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
-        self.settings.add_parameter('a/material/gamma',      1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
+        self.settings.add_parameter('a/material/gyro',      1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
         self.settings.add_parameter('a/material/M',          1.0,  siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
         self.settings.add_parameter('a/material/volume', 100*50*3, bounds=(1e-3, None), siPrefix=False, suffix=' nm^3', tip='Volume of domain (nm^3). Relevant only for thermal and STT.')
-        self.settings.add_parameter('a/material/alpha',      0.01, step=0.01, tip='Gilbert damping parameter')        
+        self.settings.add_parameter('a/material/damping',      0.01, step=0.01, tip='Gilbert damping parameter')        
         
         self.settings.add_parameter('a/applied_field', True)
         self.settings.add_parameter('a/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
@@ -575,9 +641,9 @@ class solver():
         self.settings.add_parameter('a/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
         self.settings.add_parameter('a/other_torques/STT', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
         
-        self.settings.add_parameter('a/other_torques/Tx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('a/other_torques/Ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('a/other_torques/Tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('a/other_torques/Qx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('a/other_torques/Qy', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('a/other_torques/Qz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
         
         self.settings.add_parameter('a/anisotropy', True)
         self.settings.add_parameter('a/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
@@ -607,10 +673,10 @@ class solver():
         self.settings.add_parameter('b/initial_condition/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('b/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
-        self.settings.add_parameter('b/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
+        self.settings.add_parameter('b/material/gyro', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
         self.settings.add_parameter('b/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
         self.settings.add_parameter('b/material/volume', 100*50*3, bounds=(1e-3, None), siPrefix=False, suffix=' nm^3', tip='Volume of domain (nm^3). Relevant only for thermal and STT.')
-        self.settings.add_parameter('b/material/alpha', 0.01, step=0.01, tip='Gilbert damping parameter')        
+        self.settings.add_parameter('b/material/damping', 0.01, step=0.01, tip='Gilbert damping parameter')        
         
         self.settings.add_parameter('b/applied_field', True)
         self.settings.add_parameter('b/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
@@ -621,9 +687,9 @@ class solver():
         self.settings.add_parameter('b/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
         self.settings.add_parameter('b/other_torques/STT', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
         
-        self.settings.add_parameter('b/other_torques/Tx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('b/other_torques/Ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('b/other_torques/Tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('b/other_torques/Qx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('b/other_torques/Qy', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('b/other_torques/Qz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
         
         self.settings.add_parameter('b/anisotropy', True)
         self.settings.add_parameter('b/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
@@ -648,11 +714,11 @@ class solver():
         self.settings.add_parameter('b/dipole/Dzy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         
         # Plot tabs
-        self.tabs         = self.grid_bottom.place_object(_g.TabArea(autosettings_path='solver.tabs.txt'), alignment=0)
+        self.tabs = self.grid_bottom.add(_g.TabArea(autosettings_path='solver.tabs.txt'), alignment=0)
         
         # Inspection plot for all arrays
         self.tab_inspect  = self.tabs.add_tab('Inspect')
-        self.plot_inspect = self.tab_inspect.place_object(_g.DataboxPlot(autoscript=6, autosettings_path='solver.plot_inspect.txt'), alignment=0)
+        self.plot_inspect = self.tab_inspect.add(_g.DataboxPlot(autoscript=6, autosettings_path='solver.plot_inspect.txt'), alignment=0)
         self.initialize_plot_inspect()
         self.plot_inspect.after_clear = self.initialize_plot_inspect
         self.plot_inspect.autoscript_custom = self._user_script
@@ -661,83 +727,62 @@ class solver():
         self.tab_process_inspect = self.tabs.add_tab('Process')
         self.process_inspect = self.tab_process_inspect.add(_g.DataboxProcessor('process_inspect', self.plot_inspect), alignment=0)
         
-        # 3D Tab
-        if _3d_enabled:
-            self.tab_3d = self.tabs.add_tab('3D')
-            self.button_3d_a   = self.tab_3d.place_object(_g.Button('a',   checkable=True, checked=True)) 
-            self.button_3d_b   = self.tab_3d.place_object(_g.Button('b',   checkable=True, checked=False)) 
-            self.button_3d_sum = self.tab_3d.place_object(_g.Button('Sum', checkable=True, checked=False)) 
-            self.button_plot_3d = self.tab_3d.place_object(_g.Button('Update Plot'))
-            self.tab_3d.new_autorow()
-            
-            # Make the 3D plot window
-            self._widget_3d = _gl.GLViewWidget()
-            self._widget_3d.opts['distance'] = 50
-            
-            # Make the grids
-            self._gridx_3d = _gl.GLGridItem()
-            self._gridx_3d.rotate(90,0,1,0)
-            self._gridx_3d.translate(-10,0,0)
-            self._widget_3d.addItem(self._gridx_3d)
-            self._gridy_3d = _gl.GLGridItem()
-            self._gridy_3d.rotate(90,1,0,0)
-            self._gridy_3d.translate(0,-10,0)
-            self._widget_3d.addItem(self._gridy_3d)
-            self._gridz_3d = _gl.GLGridItem()
-            self._gridz_3d.translate(0,0,-10)
-            self._widget_3d.addItem(self._gridz_3d)
-            
-            # Trajectories
-            color_a = _pg.glColor(100,100,255)
-            color_b = _pg.glColor(255,100,100)
-            color_n = _pg.glColor(50,255,255)
-            self._trajectory_a_3d   = _gl.GLLinePlotItem(color=color_a, width=2.5, antialias=True)
-            self._trajectory_b_3d   = _gl.GLLinePlotItem(color=color_b, width=2.5, antialias=True)
-            self._trajectory_sum_3d = _gl.GLLinePlotItem(color=color_n, width=2.5, antialias=True)
-            self._widget_3d.addItem(self._trajectory_a_3d)
-            self._widget_3d.addItem(self._trajectory_b_3d)
-            self._widget_3d.addItem(self._trajectory_sum_3d)
-            
-            # Other items
-            self._start_dot_a_3d   = _gl.GLScatterPlotItem(color=color_a, size=7.0, pos=_n.array([[10,0,0]]))
-            self._start_dot_b_3d   = _gl.GLScatterPlotItem(color=color_b, size=7.0, pos=_n.array([[-10,0,0]]))
-            self._start_dot_sum_3d = _gl.GLScatterPlotItem(color=color_n, size=7.0, pos=_n.array([[-10,0,0]]))
-            self._widget_3d.addItem(self._start_dot_a_3d)
-            self._widget_3d.addItem(self._start_dot_b_3d)
-            self._widget_3d.addItem(self._start_dot_sum_3d)
-            self._update_start_dots()
-            
-            # Add the 3D plot window to the tab
-            self.tab_3d.place_object(self._widget_3d, column_span=4, alignment=0)
-            self.tab_3d.set_column_stretch(3)
-            
-            self.button_3d_a   .signal_clicked.connect(self._button_plot_3d_clicked)
-            self.button_3d_b   .signal_clicked.connect(self._button_plot_3d_clicked)
-            self.button_3d_sum .signal_clicked.connect(self._button_plot_3d_clicked)
-            self.button_plot_3d.signal_clicked.connect(self._button_plot_3d_clicked)
+        self.tab_3d = self.tabs.add_tab('3D')
+        self.button_3d_a   = self.tab_3d.add(_g.Button('a',   checkable=True, checked=True)) 
+        self.button_3d_b   = self.tab_3d.add(_g.Button('b',   checkable=True, checked=False)) 
+        self.button_3d_sum = self.tab_3d.add(_g.Button('Sum', checkable=True, checked=False)) 
+        self.button_plot_3d = self.tab_3d.add(_g.Button('Update Plot'))
+        self.tab_3d.new_autorow()
+        
+        # Make the 3D plot window
+        self._widget_3d = _gl.GLViewWidget()
+        self._widget_3d.opts['distance'] = 50
+        
+        # Make the grids
+        self._gridx_3d = _gl.GLGridItem()
+        self._gridx_3d.rotate(90,0,1,0)
+        self._gridx_3d.translate(-10,0,0)
+        self._widget_3d.addItem(self._gridx_3d)
+        self._gridy_3d = _gl.GLGridItem()
+        self._gridy_3d.rotate(90,1,0,0)
+        self._gridy_3d.translate(0,-10,0)
+        self._widget_3d.addItem(self._gridy_3d)
+        self._gridz_3d = _gl.GLGridItem()
+        self._gridz_3d.translate(0,0,-10)
+        self._widget_3d.addItem(self._gridz_3d)
+        
+        # Trajectories
+        color_a = _pg.glColor(100,100,255)
+        color_b = _pg.glColor(255,100,100)
+        color_n = _pg.glColor(50,255,255)
+        self._trajectory_a_3d   = _gl.GLLinePlotItem(color=color_a, width=2.5, antialias=True)
+        self._trajectory_b_3d   = _gl.GLLinePlotItem(color=color_b, width=2.5, antialias=True)
+        self._trajectory_sum_3d = _gl.GLLinePlotItem(color=color_n, width=2.5, antialias=True)
+        self._widget_3d.addItem(self._trajectory_a_3d)
+        self._widget_3d.addItem(self._trajectory_b_3d)
+        self._widget_3d.addItem(self._trajectory_sum_3d)
+        
+        # Other items
+        self._start_dot_a_3d   = _gl.GLScatterPlotItem(color=color_a, size=7.0, pos=_n.array([[10,0,0]]))
+        self._start_dot_b_3d   = _gl.GLScatterPlotItem(color=color_b, size=7.0, pos=_n.array([[-10,0,0]]))
+        self._start_dot_sum_3d = _gl.GLScatterPlotItem(color=color_n, size=7.0, pos=_n.array([[-10,0,0]]))
+        self._widget_3d.addItem(self._start_dot_a_3d)
+        self._widget_3d.addItem(self._start_dot_b_3d)
+        self._widget_3d.addItem(self._start_dot_sum_3d)
+        self._update_start_dots()
+        
+        # Add the 3D plot window to the tab
+        self.tab_3d.add(self._widget_3d, column_span=4, alignment=0)
+        self.tab_3d.set_column_stretch(3)
+        
+        self.button_3d_a   .signal_clicked.connect(self._button_plot_3d_clicked)
+        self.button_3d_b   .signal_clicked.connect(self._button_plot_3d_clicked)
+        self.button_3d_sum .signal_clicked.connect(self._button_plot_3d_clicked)
+        self.button_plot_3d.signal_clicked.connect(self._button_plot_3d_clicked)
          
-        
-        
-        # Test tab
-        self.tab_test        = self.tabs.add_tab('Test')
-        self.button_run_test = self.tab_test.add(_g.Button('Run Test!', checkable=True))
-        self.label_test      = self.tab_test.add(_g.Label(''))
-        self.tab_test.new_autorow()
-        
-        self.settings_test  = self.tab_test.add(_g.TreeDictionary(autosettings_path='solver.settings_test.txt')) 
-        self.settings_test.add_parameter('test', ['test_thermal_noise'], tip='Which test to perform')
-        self.settings_test.add_parameter('test_thermal_noise/iterations', 10, tip='How many test iterations')
-        self.settings_test.add_parameter('test_thermal_noise/bins',      100, tip='How many bins for the histogram')
-        
-        self.plot_test   = self.tab_test.add(_g.DataboxPlot(autoscript=1, autosettings_path='solver.plot_test.txt'), alignment=0, column_span=10)
-        self.tab_test.set_column_stretch(7)
-        
-        # Used for verifying that the continuous thermal field code is working properly.
-        self._previous_a_thermal_Bx = self._previous_a_thermal_By = self._previous_a_thermal_Bz = None
-        self._previous_b_thermal_Bx = self._previous_b_thermal_By = self._previous_b_thermal_Bz = None
-        
-        
-        
+        # Create the test GUI
+        self._build_gui_test()
+
         # Connect the other controls
         self.button_run     .signal_clicked.connect(self._button_run_clicked)
         self.button_run_test.signal_clicked.connect(self._button_run_test_clicked)
@@ -752,11 +797,49 @@ class solver():
         self.settings.emit_signal_changed('b/anisotropy')        
         self.settings.emit_signal_changed('b/dipole')        
         
-        # Send kwargs
-        self.set_multiple(**kwargs)
-        
         # Let's have a look!
         self.window.show()
+
+    def _build_gui_test(self):
+        """
+        Builds the test tab.
+        """        
+        
+        # Test tab
+        self.tab_test        = self.tabs.add_tab('Test')
+        self.button_run_test = self.tab_test.add(_g.Button('Run Test!', checkable=True))
+        self.label_test      = self.tab_test.add(_g.Label(''))
+        self.label_test_info = self.tab_test.add(_g.Label(''))
+        self.tab_test.new_autorow()
+        
+        self.settings_test  = self.tab_test.add(_g.TreeDictionary(autosettings_path='solver.settings_test.txt')) 
+        self.settings_test.add_parameter('test', 
+                                         ['thermal_noise',
+                                          'field_sweep'], 
+                                         tip='Which test to perform')
+        self.settings_test.add_parameter('iterations', 10, limits=(1,None), tip='How many test iterations')
+        
+        self.settings_test.add_parameter('thermal_noise/bins',      100, limits=(1,None), tip='How many bins for the histogram')
+        
+        self.settings_test.add_parameter('field_sweep/steps',        100, limits=(1, None), dec=True)
+        self.settings_test.add_parameter('field_sweep/B_start',      0.0, suffix='T',   tip='Start value.')
+        self.settings_test.add_parameter('field_sweep/B_stop',       0.0, suffix='T',   tip='Stop value.')
+        self.settings_test.add_parameter('field_sweep/theta_start', 90.0, suffix=' deg', tip='Start value of spherical coordinates angle from z-axis.')
+        self.settings_test.add_parameter('field_sweep/theta_stop',  90.0, suffix=' deg', tip='Stop value of spherical coordinates angle from z-axis.')
+        self.settings_test.add_parameter('field_sweep/phi_start',    0.0, suffix=' deg', tip='Start value of spherical coordinates angle from x-axis.')
+        self.settings_test.add_parameter('field_sweep/phi_stop',     0.0, suffix=' deg', tip='Stop value of spherical coordinates angle from x-axis.')
+        self.settings_test.add_parameter('field_sweep/solver_iterations', 10, limits=(1,None), dec=True, tip='How many times to push "Go!" per step.')
+        
+        self.plot_test   = self.tab_test.add(_g.DataboxPlot(autoscript=1, autosettings_path='solver.plot_test.txt'), alignment=0, column_span=10)
+        self.tab_test.set_column_stretch(7)
+        
+        # Used for verifying that the continuous thermal field code is working properly.
+        self._previous_a_thermal_Bx = self._previous_a_thermal_By = self._previous_a_thermal_Bz = None
+        self._previous_b_thermal_Bx = self._previous_b_thermal_By = self._previous_b_thermal_Bz = None
+        
+        
+        
+        
 
     def _user_script(self):
         """
@@ -854,22 +937,22 @@ for n in range(1, len(d.ckeys)):
         # print(self._T,        self['T'])
         # print(self._a_M,      self['a/M'])
         # print(self._a_volume, self['a/volume'])
-        # print(self._a_gamma,  self['a/gamma'])
-        # print(self._a_alpha,  self['a/alpha'])
+        # print(self._a_gyro,  self['a/gyro'])
+        # print(self._a_damping,  self['a/damping'])
         # print(self._b_M,      self['b/M'])
         # print(self._b_volume, self['b/volume'])
-        # print(self._b_gamma,  self['b/gamma'])
-        # print(self._b_alpha,  self['b/alpha'])
+        # print(self._b_gyro,  self['b/gyro'])
+        # print(self._b_damping,  self['b/damping'])
         return self._dt       == self['dt']       and \
                self._T        == self['T']        and \
                self._a_M      == self['a/M']      and \
                self._a_volume == self['a/volume'] and \
-               self._a_gamma  == self['a/gamma']  and \
-               self._a_alpha  == self['a/alpha']  and \
+               self._a_gyro  == self['a/gyro']  and \
+               self._a_damping  == self['a/damping']  and \
                self._b_M      == self['b/M']      and \
                self._b_volume == self['b/volume'] and \
-               self._b_gamma  == self['b/gamma']  and \
-               self._b_alpha  == self['b/alpha']
+               self._b_gyro  == self['b/gyro']  and \
+               self._b_damping  == self['b/damping']
        
 
     def _button_run_clicked(self, *a):
@@ -901,20 +984,31 @@ for n in range(1, len(d.ckeys)):
         Go button pressed: Run the simulation!
         """
 
-        # Clear the test plot
-        self.plot_test.clear()
-
-        self.plot_test.h(n=0)
-        self.plot_test.h(N=self.settings_test['test_thermal_noise/iterations'])
-        while (self.plot_test.h('n') < self.plot_test.h('N') or self.plot_test.h('N') < 1) \
+        n = 1
+        while n <= self.settings_test['iterations'] \
+        or self.settings_test['iterations'] < 1 \
           and self.button_run_test.is_checked():
             
-            # RUN THE TEST!
-            exec('self.'+self.settings_test['test']+'()')
+            # Clear the test plot
+            self.plot_test.clear()
             
-            # Provide some user information
-            self.plot_test.h(n = self.plot_test.h('n') + 1)
-            self.label_test.set_text('Iteration ' + str(self.plot_test.h('n')))
+            # Send the settings in as header information
+            self.settings     .send_to_databox_header(self.plot_test)
+            self.settings_test.send_to_databox_header(self.plot_test)
+    
+            # Send iteration number to the header
+            self.plot_test.h(n = n)
+            
+            # Autosave if checked
+            self.plot_test.autosave()
+            
+            # Update the gui iteration number
+            self.label_test.set_text('Iteration ' + str(n))
+
+            # RUN THE TEST!
+            exec('self.test_'+self.settings_test['test']+'()')
+            
+            n += 1
             
         self.button_run_test.set_checked(False)
 
@@ -1068,12 +1162,12 @@ for n in range(1, len(d.ckeys)):
         self._T        = self['T']
         self._a_M      = self['a/M']
         self._a_volume = self['a/volume']
-        self._a_gamma  = self['a/gamma']
-        self._a_alpha  = self['a/alpha']
+        self._a_gyro  = self['a/gyro']
+        self._a_damping  = self['a/damping']
         self._b_M      = self['b/M']
         self._b_volume = self['b/volume']
-        self._b_gamma  = self['b/gamma']
-        self._b_alpha  = self['b/alpha']
+        self._b_gyro  = self['b/gyro']
+        self._b_damping  = self['b/damping']
         
         return self
 
@@ -1171,7 +1265,7 @@ for n in range(1, len(d.ckeys)):
         the same as self.set('a/initial_condition/x0', 0.5)
 
         Also, if you skip the root, it will assume either 'solver' or 'a' by
-        default, so 'Tx' is the same as 'a/Tx'.
+        default, so 'Qx' is the same as 'a/Qx'.
 
         Parameters
         ----------
@@ -1394,13 +1488,13 @@ for n in range(1, len(d.ckeys)):
         ----------
         domain='a'
             Which domain receives the Langevin field The only domain-
-            specific parameters used are gamma and M.
+            specific parameters used are gyro and M.
         
         Returns
         -------
         """
-        return _n.sqrt(4*self.settings[domain+'/material/alpha'] * kB*self['T'] \
-                     /  (self.settings[domain+'/material/gamma'] *              \
+        return _n.sqrt(4*self.settings[domain+'/material/damping'] * kB*self['T'] \
+                     /  (self.settings[domain+'/material/gyro'] *              \
                          self.settings[domain+'/material/M']/u0 *               \
                          self['a/volume']*1e-27 *                               \
                          self.settings['solver/dt']))
@@ -1432,7 +1526,7 @@ for n in range(1, len(d.ckeys)):
         ----------
         domain='a'
             Which domain receives the spin transfer torque. The only domain-
-            specific parameters used are gamma and M.
+            specific parameters used are gyro and M.
             
         efficiency=1.0 [unitless]
             How electron spins are deposited on average per passing electron.
@@ -1444,18 +1538,13 @@ for n in range(1, len(d.ckeys)):
         -------
         The torque per mA [rad/(s*mA)] applied to a unit vector.
         """
-        return efficiency*self[domain+'/gamma']*hbar*1e-3 / \
+        return efficiency*self[domain+'/gyro']*hbar*1e-3 / \
                (2*ec*(self[domain+'/M']/u0)*volume_nm3*1e-27)
     
-    def test_thermal_noise(self, bins=50):
+    def test_thermal_noise(self):
         """
         Runs the simulation in continuous mode, binning the results by
         energy and comparing to a Boltzmann distribution in the Test tab.
-
-        Parameters
-        ----------
-        bins=40
-            How many bins for the distribution.
 
         Returns
         -------
@@ -1542,8 +1631,8 @@ for n in range(1, len(d.ckeys)):
             self.plot_inspect.plot()
             self.window.process_events()
         
-        # Bin everything from this run. 
-        Na, bins = _n.histogram(self.plot_inspect['Ua'], bins)
+        # Bin everything from this run.
+        Na, bins = _n.histogram(self.plot_inspect['Ua'], self.settings_test['thermal_noise/bins'])
             
         # Get x-axis from the midpoints of the bin edges
         Ta = 0.5*(bins[1:]+bins[0:len(bins)-1])/kB
@@ -1598,49 +1687,100 @@ for n in range(1, len(d.ckeys)):
             self._previous_b_thermal_Bz = self.b_thermal_Bz[-1]
     
         return Ta, Na          
+    
+    def test_field_sweep(self):
+        """
+        Runs a stepped sweep between the specified start and end conditions.
+        """
+        
+        # Get the arrays of values
+        Bs     = _n.linspace(self.settings_test['field_sweep/B_start'],
+                             self.settings_test['field_sweep/B_stop'],
+                             self.settings_test['field_sweep/steps'])
+        
+        thetas = _n.linspace(self.settings_test['field_sweep/theta_start'],
+                             self.settings_test['field_sweep/theta_stop'],
+                             self.settings_test['field_sweep/steps'])
+        
+        phis   = _n.linspace(self.settings_test['field_sweep/phi_start'],
+                             self.settings_test['field_sweep/phi_stop'],
+                             self.settings_test['field_sweep/steps'])
+        
+        # Loop over the number of steps
+        n = 0
+        while n < len(Bs) and self.button_run_test.is_checked():
+        
+            # Get the applied fields
+            Bx = Bs[n]*_n.sin(thetas[n]*_n.pi/180)*_n.cos(phis[n]*_n.pi/180)
+            By = Bs[n]*_n.sin(thetas[n]*_n.pi/180)*_n.sin(phis[n]*_n.pi/180)
+            Bz = Bs[n]*_n.cos(thetas[n]*_n.pi/180)
             
+            print(n, Bx, By, Bz)    
+        
+            # Set it for both domains
+            self['a/Bx'] = Bx
+            self['a/By'] = By
+            self['a/Bz'] = Bz
+            self['b/Bx'] = Bx
+            self['b/By'] = By
+            self['b/Bz'] = Bz
             
+            # Update the header
+            self.plot_test.h(
+                Bx = Bx,
+                By = By,
+                Bz = Bz,
+                field_sweep_step = n
+            )
+            
+            # Set the number of solver iterations
+            self['iterations'] = 1
+            
+            # Loop over the number of solver iterations, pushing go and plotting
+            m = 0
+            while m < self.settings_test['field_sweep/solver_iterations'] \
+              and self.button_run_test.is_checked():
+                
+                # Push Go!
+                self.button_run.click()
+                
+                # Update the header
+                self.plot_test.h(field_sweep_solver_iteration = m)
+                
+                # Get the new data point
+                new_data  = [n, m, Bs[n], thetas[n], phis[n], Bx, By, Bz]
+                new_ckeys = ['step', 'iteration', 'B', 'theta', 'phi', 'Bx', 'By', 'Bz']
+                
+                # Domain data
+                if self['a/mode']:
+                    new_data  = new_data  + [_n.mean(self['ax']), _n.mean(self['ay']), _n.mean(self['az'])]
+                    new_ckeys = new_ckeys + ['ax', 'ay', 'az']
+                if self['b/mode']:
+                    new_data  = new_data  + [_n.mean(self['bx']), _n.mean(self['by']), _n.mean(self['bz'])]
+                    new_ckeys = new_ckeys + ['bx', 'by', 'bz']
+                
+                # Now record the average values as a new data point
+                self.plot_test.append_data_point(new_data, new_ckeys)
+                
+                # Update the plot
+                self.plot_test.plot()
+                self.window.process_events()
+ 
+                # Increment the solver iteration
+                m += 1
+            
+ 
+            # Increment the step
+            n += 1
+        
+
                 
     
 
 if __name__ == '__main__':
     
-    #######################
-    # API Playground
-    #######################
-    
-    # # Create a solver instance
-    # m = solver_api()
-    
-    # # Set up the physical parameters
-    # m.set_multiple(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=777, alpha=0.1/_n.pi/2)
-    # m.a['By']  = _n.linspace(0,2,m.steps)
-    # m.a['bz0'] = 2
-    
-    # # Run it & plot.
-    # m.run(True); _s.plot.xy.data(None, [m.ax, m.by], clear=0, label=['ax','by'])
-    # m.run(True); _s.plot.xy.data(None, [m.ax, m.by], clear=0, label=['ax','by'], xshift=m.steps-1, xshift_every=0)
-    # m.run(True); _s.plot.xy.data(None, [m.ax, m.by], clear=0, label=['ax','by'], xshift=2*(m.steps-1), xshift_every=0)
-    
-    
-    
-    
-    
-    #############################
-    # GUI Playground
-    #############################
-
-    self = solver()
-
-    # # Pulse sequence
-    # n1=1000; 
-    # self['Tx'] = 4e9*self.pulse(0,n1); 
-    # self['Tz'] = 1e9*self.pulse(n1,self['steps'])
-    # self.run()
-
-    # Thermal field
-    #self.test_thermal_noise(10)
-    
+    import macrospinmob
+    runfile(macrospinmob.__path__[0] + '/_tests/test_everything.py')
     
     
     
