@@ -230,6 +230,7 @@ class Test_everything(ut.TestCase):
             s.plot_inspect['b/Lx'] = s.b.Lx  
             s.plot_inspect.plot()
         
+        s['a/mode'] = 1
         
         # CLEANUP: Remove egg_settings for next time
         if os.path.exists('egg_settings'): shutil.rmtree('egg_settings')

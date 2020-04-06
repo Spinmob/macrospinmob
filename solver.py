@@ -857,14 +857,15 @@ class solver():
         
         self.settings_test.add_parameter('thermal_noise/bins',      100, limits=(1,None), tip='How many bins for the histogram')
         
-        self.settings_test.add_parameter('field_sweep/steps',        100, limits=(1, None), dec=True)
+        self.settings_test.add_parameter('field_sweep/steps',            100, limits=(1, None), dec=True)
+        self.settings_test.add_parameter('field_sweep/solver_iterations', 10, limits=(1,None), dec=True, tip='How many times to push "Go!" per step.')
+        
         self.settings_test.add_parameter('field_sweep/B_start',      0.0, suffix='T',   tip='Start value.')
         self.settings_test.add_parameter('field_sweep/B_stop',       0.0, suffix='T',   tip='Stop value.')
         self.settings_test.add_parameter('field_sweep/theta_start', 90.0, suffix=' deg', tip='Start value of spherical coordinates angle from z-axis.')
         self.settings_test.add_parameter('field_sweep/theta_stop',  90.0, suffix=' deg', tip='Stop value of spherical coordinates angle from z-axis.')
         self.settings_test.add_parameter('field_sweep/phi_start',    0.0, suffix=' deg', tip='Start value of spherical coordinates angle from x-axis.')
         self.settings_test.add_parameter('field_sweep/phi_stop',     0.0, suffix=' deg', tip='Stop value of spherical coordinates angle from x-axis.')
-        self.settings_test.add_parameter('field_sweep/solver_iterations', 10, limits=(1,None), dec=True, tip='How many times to push "Go!" per step.')
         
         self.plot_test   = self.tab_test.add(_g.DataboxPlot(autoscript=1, autosettings_path='solver.plot_test.txt'), alignment=0, column_span=10)
         self.tab_test.set_column_stretch(7)
@@ -1394,6 +1395,114 @@ for n in range(1, len(d.ckeys)):
         return efficiency*self[domain+'/gyro']*hbar*1e-3 / \
                (2*ec*(self[domain+'/M']/u0)*volume_nm3*1e-27)
     
+    def get_magnetic_energy(self, domain='a'):
+        """
+        Calculates the magnetic energy arising from the applied, exchange,
+        anisotropy, and dipolar field for the specified domain.
+        
+        Stores this as a new column 'U<domain>' in self.plot_inspect, creates
+        histogram columns 'U<domain>_K' (temperature bins), 'B<domain>' 
+        (Boltzmann curve), and 'P<domain>' (measured probability), then
+        returns the average value.
+        
+        Parameters
+        ----------
+        domain='a'
+            Domain for which to do the calculation.
+            
+        Returns
+        -------
+        average magnetic energy for the current result.
+        
+        """
+        # For quick coding
+        a = domain
+        
+        # For simplicity, we define it so that a is always 
+        # "this" domain, and b is the "other" domain
+        if a == 'a': b = 'b'
+        else:        b = 'a'
+        
+        # Add plot styles
+        if a == 'a':
+            self.plot_test.styles.append(dict(pen='#7777FF'))
+            self.plot_test.styles.append(dict(symbol='+', symbolPen='#7777FF', pen=None))
+        else:
+            self.plot_test.styles.append(dict(pen='#FF7777'))
+            self.plot_test.styles.append(dict(symbol='+', symbolPen='#FF7777', pen=None))
+
+        
+        if self[a+'x'] is None: 
+            print('ERROR get_magnetic_energy(): No data from simulation?')
+            return
+        
+        # Formula is 0.5*Ms*V*B*cos(theta), so calculate some constants
+        # to keep the code looking reasonably clean
+        
+        # Magnetic volume
+        MsV = (self[a+'/M']/u0) * (self[a+'/V']*1e-27) 
+        
+        # Applied field
+        B0x = self[a+'/Bx']
+        B0y = self[a+'/By']
+        B0z = self[a+'/Bz']
+        
+        # Anisotropy
+        BAx = -self[a+'/M'] * (self[a+'/Nxx']*self[a+'x'] + self[a+'/Nxy']*self[a+'y'] + self[a+'/Nxz']*self[a+'z'])
+        BAy = -self[a+'/M'] * (self[a+'/Nyy']*self[a+'y'] + self[a+'/Nyz']*self[a+'z'] + self[a+'/Nyx']*self[a+'x'])
+        BAz = -self[a+'/M'] * (self[a+'/Nyz']*self[a+'z'] + self[a+'/Nzx']*self[a+'x'] + self[a+'/Nzy']*self[a+'y'])
+        
+        # Get the other domain's vector
+        if b == 'b':
+            bx = self.b.x
+            by = self.b.y
+            bz = self.b.z
+        else:
+            bx = self.a.x
+            by = self.a.y
+            bz = self.a.z
+                    
+        # Dipole
+        BDx = -self[b+'/M'] * (self[a+'/Dxx']*bx + self[a+'/Dxy']*by + self[a+'/Dxz']*bz)
+        BDy = -self[b+'/M'] * (self[a+'/Dyy']*by + self[a+'/Dyz']*bz + self[a+'/Dyx']*bx)
+        BDz = -self[b+'/M'] * (self[a+'/Dyz']*bz + self[a+'/Dzx']*bx + self[a+'/Dzy']*by)
+    
+        # Exchange
+        BXx = self[a+'/X'] * bx
+        BXy = self[a+'/X'] * by
+        BXz = self[a+'/X'] * bz
+        
+        # Total field
+        Bx = B0x + BAx + BDx + BXx
+        By = B0y + BAy + BDy + BXy
+        Bz = B0z + BAz + BDz + BXz
+        
+        # Energy!
+        self.plot_inspect['U'+a] = -0.5*MsV*(self[a+'x']*Bx + self[a+'y']*By + self[a+'z']*Bz)
+        
+        # Bin everything from this run.
+        Na, bins = _n.histogram(self.plot_inspect['U'+a], self.settings_test['thermal_noise/bins'])
+            
+        # Get x-axis from the midpoints of the bin edges
+        Ta = 0.5*(bins[1:]+bins[0:len(bins)-1])/kB
+        Ta = Ta-Ta[0]
+        
+        # Theory
+        Ba = _n.exp(-Ta/self[a+'/T'])
+        
+        # Populate the test tab
+        self.settings.send_to_databox_header(self.plot_test)
+        
+        self.plot_test['U'+a+'_K'] = Ta
+        self.plot_test['B'+a]   = Ba / _n.sum(Ba)
+        self.plot_test['P'+a]   = Na / _n.sum(Na)
+        
+        # Set the plot to "triples" if it's not on "edit"
+        if not self.plot_test.combo_autoscript.get_index() == 0:
+            self.plot_test.combo_autoscript.set_index(3)
+        
+        return _n.mean(self.plot_inspect['U'+a])    
+    
     def test_thermal_noise(self):
         """
         Runs the simulation in continuous mode, binning the results by
@@ -1412,8 +1521,7 @@ for n in range(1, len(d.ckeys)):
         self['iterations'] = 1
                 
         # Set up the plot style
-        self.plot_test.styles = [dict(pen=(0,2)),
-                                 dict(symbol='+', symbolPen='w', pen=None)]
+        self.plot_test.styles = []
         
         ##################
         # RUN SIMULATION #
@@ -1424,87 +1532,15 @@ for n in range(1, len(d.ckeys)):
         ###############################
         # MAGNETIC ENERGY CALCULATION #
         ###############################
+    
+        if self['a/mode']: self.get_magnetic_energy('a')
+        if self['b/mode']: self.get_magnetic_energy('b')
         
-        # Calculate the magnetic energy for each point.
-        if self['a/mode']:
-            
-            if self['ax'] is None: 
-                print('ERROR: No data from simulation?')
-                return
-            
-            # Formula is 0.5*Ms*V*B*cos(theta), so calculate some constants
-            # to keep the code looking reasonably clean
-            
-            # Magnetic volume
-            MsV = (self['a/M']/u0) * (self['a/V']*1e-27) 
-            
-            # Applied field
-            B0x = self['a/Bx']
-            B0y = self['a/By']
-            B0z = self['a/Bz']
-            
-            # Anisotropy
-            BAx = -self['a/M'] * (self['a/Nxx']*self['ax'] + self['a/Nxy']*self['ay'] + self['a/Nxz']*self['az'])
-            BAy = -self['a/M'] * (self['a/Nyy']*self['ay'] + self['a/Nyz']*self['az'] + self['a/Nyx']*self['ax'])
-            BAz = -self['a/M'] * (self['a/Nyz']*self['az'] + self['a/Nzx']*self['ax'] + self['a/Nzy']*self['ay'])
-            
-            # Get the other domain's vector
-            if self['b/mode']:
-                bx = self['bx']
-                by = self['by']
-                bz = self['bz']
-            else:
-                bx = self['b/x0']
-                by = self['b/y0']
-                bz = self['b/z0']
-                norm = (bx*bx+by*by+bz*bz)**(-0.5)
-                bx *= norm
-                by *= norm
-                bz *= norm
-                
-            # Dipole
-            BDx = -self['b/M'] * (self['a/Dxx']*bx + self['a/Dxy']*by + self['a/Dxz']*bz)
-            BDy = -self['b/M'] * (self['a/Dyy']*by + self['a/Dyz']*bz + self['a/Dyx']*bx)
-            BDz = -self['b/M'] * (self['a/Dyz']*bz + self['a/Dzx']*bx + self['a/Dzy']*by)
-        
-            # Exchange
-            BXx = self['a/X'] * bx
-            BXy = self['a/X'] * by
-            BXz = self['a/X'] * bz
-            
-            # Total field
-            Bx = B0x + BAx + BDx + BXx
-            By = B0y + BAy + BDy + BXy
-            Bz = B0z + BAz + BDz + BXz
-            
-            # Energy!
-            self.plot_inspect['Ua'] = -0.5*MsV*(self['ax']*Bx + self['ay']*By + self['az']*Bz)
-            
-            # Update the plot and wait for events
-            self.plot_inspect.plot()
-            self.window.process_events()
-        
-            # Bin everything from this run.
-            Na, bins = _n.histogram(self.plot_inspect['Ua'], self.settings_test['thermal_noise/bins'])
-                
-            # Get x-axis from the midpoints of the bin edges
-            Ta = 0.5*(bins[1:]+bins[0:len(bins)-1])/kB
-            Ta = Ta-Ta[0]
-            
-            # Theory
-            Ba = _n.exp(-Ta/self['a/T'])
-            
-            # Populate the test tab
-            self.settings.send_to_databox_header(self.plot_test)
-            
-            self.plot_test['Ua_K'] = Ta
-            self.plot_test['Ba']   = Ba / _n.sum(Ba)
-            self.plot_test['Pa']   = Na / _n.sum(Na)
-            
-            self.plot_test.plot()
-            self.window.process_events()
-                
-        return self        
+        # Plot
+        self.plot_inspect.plot()
+        self.plot_test.plot()
+
+         
     
     def test_field_sweep(self):
         """
