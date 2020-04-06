@@ -24,11 +24,58 @@
 #include <math.h>
 #include <time.h>
 
-int log_level=0;
+#define kB 1.380649e-23     // Boltzmann constant [J/K]
+#define u0 1.25663706212e-6 // Vacuum permeability [H/m | N/A^2]
+
+
+
+///////////////////////////////////
+// LOG STUFF
+///////////////////////////////////
+int _log_level=4;
 FILE *log_file;
 
+
+
 ///////////////////////////////
-// DOMAIN class
+// STANDALONE FUNCTIONS
+///////////////////////////////
+double random_gaussian()
+{
+  // This produces a random number from a gaussian distribution having standard deviation 1
+
+  static int noExtra = 1;  // the algorithm is a cute trick that produces 2 random numbers, 
+                           // returns one of them, and keeps track of the other
+                           // toggling noExtra to decide if a new calculation is required.
+  static double gset;
+  double fac, r, v1, v2;
+
+  if (noExtra)
+  {
+    do // get two random numbers between -1 and 1, and make sure they are within the unit circle
+    {
+      v1 = 2.0*rand()/RAND_MAX - 1;
+      v2 = 2.0*rand()/RAND_MAX - 1;
+      r = v1*v1 + v2*v2;           // need two random numbers in the unit circle
+    } while (r >= 1.0 || r == 0);
+
+    // now do the transformation
+    fac = sqrt(-2.0*log(r)/r);
+    gset = v1*fac;
+    noExtra = 0; // we have an extra now
+    return v2*fac;
+  }
+  else
+  {
+    noExtra = 1;
+    return gset;
+  }
+}
+
+
+
+///////////////////////////////
+// DOMAIN struct
 ///////////////////////////////
 
 // Data structure for each domain. 
@@ -40,14 +87,23 @@ typedef struct domain {
     // Model Inputs 
     //////////////////////////////
 
+    // Highest index of the valid Langevin field
+    long n_langevin_valid;
+
+    // Temperature
+    double T, *Ts;
+
+    // Volume of magnetic material (m^3), used only for Langevin field
+    double V, *Vs;
+
     // Magnitude of the gyromagnetic ratio [radians / (sec T)]
-    double gamma, *gammas;
+    double gyro, *gyros;
 
     // Saturation magnetization u0*Ms [T]
     double M, *Ms;
 
     // Gilbert damping parameter [unitless]
-    double alpha, *alphas;         
+    double damping, *dampings;         
 
     // Exchange-like field strength [T], applied in the direction of the other domain's unit vector
     double X, *Xs; 
@@ -56,9 +112,9 @@ typedef struct domain {
     double STT, *STTs;
 
     // Other torque (rate) unrelated to either domain [rad / s]
-    double Tx, *Txs;
-    double Ty, *Tys; 
-    double Tz, *Tzs; 
+    double Qx, *Qxs;
+    double Qy, *Qys; 
+    double Qz, *Qzs; 
 
     // Applied field components [T]
     double Bx, *Bxs;
@@ -90,32 +146,46 @@ typedef struct domain {
     //////////////////////////////////////////
 
     // Solution arrays
-    double *x, *y, *z;  // Magnetization unit vector
+    double *x, *y, *z;    // Magnetization unit vector
+    double *Lx, *Ly, *Lz; // Langevin field arrays, filled on the fly.
 
 } domain; 
+
+// Function for logging a single step
+void log_step(domain *a, domain *b, long n) {
+    fprintf(log_file, "n=%li --------------------------%p\n", n, a->x);
+    fprintf(log_file, "  a->gyro=%f,    pointer=%p\n",     a->gyro,    a->gyros);
+    fprintf(log_file, "  a->M=%f,       pointer=%p\n",     a->M,       a->Ms);
+    fprintf(log_file, "  a->damping=%f, pointer=%p\n",     a->damping, a->dampings);
+    fprintf(log_file, "  a->X=%f,       pointer=%p\n",     a->X,       a->Xs);
+    fprintf(log_file, "  a->STT=%f,     pointer=%p\n",     a->STT,     a->STTs);
+    fprintf(log_file, "\n");
+}
 
 // Sets all the instantaneous model inputs for step n.
 // We do this to ease the user's ability to input parameters
 // vs arrays.
-void get_input_parameters(domain *a, int n) {
+void get_input_parameters(domain *a, long n) {
 
     // Always check that the array exists first, then assume it's
     // of sufficient length.
-    if(a->gammas != NULL) a->gamma = a->gammas[n]; // gyro
-    if(a->Ms     != NULL) a->M     = a->Ms[n];     // magnetization
-    if(a->alphas != NULL) a->alpha = a->alphas[n]; // damping
-    if(a->Xs     != NULL) a->X     = a->Xs[n];     // exchange
-    if(a->STTs   != NULL) a->STT   = a->STTs[n];     // spin torque
+    if(a->Ts       != NULL) a->T       = a->Ts[n];       // Temperature
+    if(a->gyros    != NULL) a->gyro    = a->gyros[n];    // gyro
+    if(a->Ms       != NULL) a->M       = a->Ms[n];       // magnetization
+    if(a->Vs       != NULL) a->V       = a->Vs[n];       // Magnetic volume (m^3)
+    if(a->dampings != NULL) a->damping = a->dampings[n]; // damping
+    if(a->Xs       != NULL) a->X       = a->Xs[n];       // exchange
+    if(a->STTs     != NULL) a->STT     = a->STTs[n];     // spin torque
     
-    if(a->Bxs != NULL) a->Bx = a->Bxs[n]; // applied field
+    if(a->Bxs != NULL) a->Bx = a->Bxs[n]; // applied B-field
     if(a->Bys != NULL) a->By = a->Bys[n];
     if(a->Bzs != NULL) a->Bz = a->Bzs[n];
 
-    if(a->Txs != NULL) a->Tx = a->Txs[n]; // applied torque
-    if(a->Tys != NULL) a->Ty = a->Tys[n];
-    if(a->Tzs != NULL) a->Tz = a->Tzs[n];
+    if(a->Qxs != NULL) a->Qx = a->Qxs[n]; // other independent torQues
+    if(a->Qys != NULL) a->Qy = a->Qys[n];
+    if(a->Qzs != NULL) a->Qz = a->Qzs[n];
 
-    if(a->Nxxs != NULL) a->Nxx = a->Nxxs[n]; // anisotropy
+    if(a->Nxxs != NULL) a->Nxx = a->Nxxs[n]; // aNisotropy
     if(a->Nxys != NULL) a->Nxy = a->Nxys[n];
     if(a->Nxzs != NULL) a->Nxz = a->Nxzs[n];
     if(a->Nyxs != NULL) a->Nyx = a->Nyxs[n];
@@ -125,7 +195,7 @@ void get_input_parameters(domain *a, int n) {
     if(a->Nzys != NULL) a->Nzy = a->Nzys[n];
     if(a->Nzzs != NULL) a->Nzz = a->Nzzs[n];
     
-    if(a->Dxxs != NULL) a->Dxx = a->Dxxs[n]; // dipole
+    if(a->Dxxs != NULL) a->Dxx = a->Dxxs[n]; // Dipole
     if(a->Dxys != NULL) a->Dxy = a->Dxys[n];
     if(a->Dxzs != NULL) a->Dxz = a->Dxzs[n];
     if(a->Dyxs != NULL) a->Dyx = a->Dyxs[n];
@@ -140,11 +210,13 @@ void get_input_parameters(domain *a, int n) {
 // Parameters
 //   domain *a    The domain whose step we wish to calculate.
 //   domain *b    The "other" domain that exerts exchange fields, dipolar fields, and spin transfer.
-//   int n        The step at which to calculate.
-void D(domain *a, domain *b, int n, double dt, double *dx, double *dy, double *dz) {
+//   long n        The step at which to calculate.
+void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *dz) {
+    
+    if(_log_level >= 4) fprintf(log_file, "D() %li %G\n", n, dt);
 
     // At each step (including intermediate steps), make sure to get 
-    // the most current model input values.
+    // the most current model input values from any supplied arrays.
     get_input_parameters(a, n);
     get_input_parameters(b, n);
     
@@ -160,8 +232,79 @@ void D(domain *a, domain *b, int n, double dt, double *dx, double *dy, double *d
     double Xx, Xy, Xz; // Exchange field [T] from "other" domain
     double Fx, Fy, Fz; // Non-damping forcer [rad/sec]
     double vx, vy, vz; // Total non-damping torque [rad/sec]
+    double Bx, By, Bz; // Total applied field, including Langevin
+    
+    // Prefactor (involves square root, don't recalculate unless we need to)
+    static double langevin_prefactor; 
 
-    // First let's calculate the aNisotropy field
+    // Previous values that go into the langevin_prefactor
+    static double T, damping, gyro, M, V;
+
+    // Initialization for the first step
+    if(n==0) {
+      
+      if(_log_level >= 4) fprintf(log_file, "  Initializing Langevin\n");
+    
+      // Set all the "previous values" to zero, to trigger a new Langevin calculation
+      langevin_prefactor = T = damping = gyro = M = V = 0;
+    }
+
+    // Get the magnetic field
+    Bx = a->Bx;
+    By = a->By;
+    Bz = a->Bz;
+
+    // Easy if we have zero temperature.
+    if(a->T == 0) {
+      a->Lx[n] = 0;
+      a->Ly[n] = 0;
+      a->Lz[n] = 0;
+    } 
+    
+    // Otherwise, calculate the Langevin field
+    else {
+      if(_log_level >= 4) 
+        fprintf(log_file, "  T=%3f damp=%3f gyro=%3G M=%3f V=%3G\n", 
+                a->T, a->damping, a->gyro, a->M, a->V);
+
+      // Only calculate a new value if we haven't already done so for this index
+      if(n > a->n_langevin_valid) {
+
+        // Only recalculate the prefactor if the previous values don't match the current values
+        if(T != a->T || damping != a->damping || gyro != a->gyro || M != a->M || V != a->V) {
+          
+          // Remember these values for next time
+          T       = a->T;
+          damping = a->damping;
+          gyro    = a->gyro;
+          M       = a->M;
+          V       = a->V;
+
+          // Calculate the prefactor
+          langevin_prefactor = sqrt( 4*u0*damping*kB*T / (gyro*M*V*dt) );
+          
+          if(_log_level >= 4) fprintf(log_file, "  langevin_prefactor=%3G\n", langevin_prefactor);
+        } 
+        
+        // Now calculate the langevin field for this step
+        a->Lx[n] = langevin_prefactor*random_gaussian();
+        a->Ly[n] = langevin_prefactor*random_gaussian();
+        a->Lz[n] = langevin_prefactor*random_gaussian();
+        
+        // If we come back to this value of n, we will use the existing value.
+        a->n_langevin_valid = n;
+
+        if(_log_level >= 4) fprintf(log_file, "  n_langevin_valid=%li Lx=%3G\n", a->n_langevin_valid, a->Lx[n]);
+      }
+
+      // Now add the Langevin field from this index to the magnetic field
+      Bx += a->Lx[n];
+      By += a->Ly[n];
+      Bz += a->Lz[n];
+    
+    } // End of T>0
+
+    // Calculate the aNisotropy field
     Nx = -a->M*(a->Nxx*a->x[n] + a->Nxy*a->y[n] + a->Nxz*a->z[n]);
     Ny = -a->M*(a->Nyy*a->y[n] + a->Nyz*a->z[n] + a->Nyx*a->x[n]);
     Nz = -a->M*(a->Nzz*a->z[n] + a->Nzx*a->x[n] + a->Nzy*a->y[n]);
@@ -176,10 +319,11 @@ void D(domain *a, domain *b, int n, double dt, double *dx, double *dy, double *d
     Xy = a->X*b->y[n];
     Xz = a->X*b->z[n];
 
-    // Now we can get the components of T
-    Fx = -a->gamma*(a->Bx+Nx+Dx+Xx) + a->STT*(a->z[n]*b->y[n] - a->y[n]*b->z[n]) + a->z[n]*a->Ty - a->y[n]*a->Tz;
-    Fy = -a->gamma*(a->By+Ny+Dy+Xy) + a->STT*(a->x[n]*b->z[n] - a->z[n]*b->x[n]) + a->x[n]*a->Tz - a->z[n]*a->Tx;
-    Fz = -a->gamma*(a->Bz+Nz+Dz+Xz) + a->STT*(a->y[n]*b->x[n] - a->x[n]*b->y[n]) + a->y[n]*a->Tx - a->x[n]*a->Ty;
+    // Now we can get the components of F. Bx, By, and Bz include the Langevin values already.
+    // (We combine the two so that if T=0 the user needn't supply langevin arrays)
+    Fx = -a->gyro*(Bx+Nx+Dx+Xx) + a->STT*(a->z[n]*b->y[n] - a->y[n]*b->z[n]) + a->z[n]*a->Qy - a->y[n]*a->Qz;
+    Fy = -a->gyro*(By+Ny+Dy+Xy) + a->STT*(a->x[n]*b->z[n] - a->z[n]*b->x[n]) + a->x[n]*a->Qz - a->z[n]*a->Qx;
+    Fz = -a->gyro*(Bz+Nz+Dz+Xz) + a->STT*(a->y[n]*b->x[n] - a->x[n]*b->y[n]) + a->y[n]*a->Qx - a->x[n]*a->Qy;
     
     // Now we can compute the total non-damping torque for this step.
     vx = a->y[n]*Fz - a->z[n]*Fy; 
@@ -187,45 +331,35 @@ void D(domain *a, domain *b, int n, double dt, double *dx, double *dy, double *d
     vz = a->x[n]*Fy - a->y[n]*Fx; 
 
     // We store the step magnitude to help with Heun method.
-    double scale = dt/(1.0+a->alpha*a->alpha);
-    *dx = ( vx + a->alpha*(a->y[n]*vz-a->z[n]*vy) ) * scale;
-    *dy = ( vy + a->alpha*(a->z[n]*vx-a->x[n]*vz) ) * scale;
-    *dz = ( vz + a->alpha*(a->x[n]*vy-a->y[n]*vx) ) * scale;
+    double scale = dt/(1.0+a->damping*a->damping);
+    *dx = ( vx + a->damping*(a->y[n]*vz-a->z[n]*vy) ) * scale;
+    *dy = ( vy + a->damping*(a->z[n]*vx-a->x[n]*vz) ) * scale;
+    *dz = ( vz + a->damping*(a->x[n]*vy-a->y[n]*vx) ) * scale;
 }
 
-
-///////////////////////////////////
-// LOG STUFF
-///////////////////////////////////
-void log_step(domain *a, domain *b, int n) {
-    fprintf(log_file, "n=%i --------------------------%p\n", n, a->x);
-    fprintf(log_file, "  a->gamma=%f, pointer=%p\n",     a->gamma, a->gammas);
-    fprintf(log_file, "  a->M=%f,     pointer=%p\n",     a->M,     a->Ms);
-    fprintf(log_file, "  a->alpha=%f, pointer=%p\n",     a->alpha, a->alphas);
-    fprintf(log_file, "  a->X=%f,     pointer=%p\n",     a->X,     a->Xs);
-    fprintf(log_file, "  a->STT=%f,   pointer=%p\n",     a->STT,   a->STTs);
-
-    fprintf(log_file, "\n");
-}
 
 
 ///////////////////////////////////
 // SOLVER
 ///////////////////////////////////
 
-void solve_heun(domain *a, domain *b, double dt, int N) {
- 
-  long t0 = time(0);
+void solve_heun(domain *a, domain *b, double dt, long steps, int log_level) {
+  _log_level = log_level;
 
   // Log file
-  if(log_level > 0) {
+  if(_log_level > 0) {
     log_file = fopen("engine.log", "w");
-    fprintf(log_file, "solve_heun() beings %li\n------------------------------------------------\n\n", t0);
+    fprintf(log_file, "\n\nsolve_heun() beings\n------------------------------------------------\n\n");
     log_step(a,b,0);
   }
 
+  // For measuring the time of the simulation
+  long t0 = time(0);
+
   // The initial condition of the magnetization is assumed to be the 
   // first element of the array, but we should make sure it's length is 1!
+
+  // Scale factor
   double scale;
   
   // Normalize a
@@ -244,12 +378,13 @@ void solve_heun(domain *a, domain *b, double dt, int N) {
   double adx1, ady1, adz1, bdx1, bdy1, bdz1;
   double adx2, ady2, adz2, bdx2, bdy2, bdz2;
   
-  if(log_level >=1) fprintf(log_file, "STARTING LOOP: N=%i steps\n", N);
+  if(_log_level >=1) fprintf(log_file, "STARTING LOOP: steps=%li\n", steps);
 
   // Now do the Heun loop
   // We don't go to the end because we don't want to overwrite the first step.
-  for(int n=0; n<=N-2; n++) {
-   
+  for(long n=0; n<=steps-2; n++) {
+    if(_log_level >= 4) fprintf(log_file, "\nn=%li -------\n", n);
+
     //  Heun method: with our derivative step dy(y,n), we calculate intermediate value
     //
     //    yi[n+1] = y[n] + dy(y,n)
@@ -265,8 +400,6 @@ void solve_heun(domain *a, domain *b, double dt, int N) {
     D(a, b, n, dt, &adx1, &ady1, &adz1);
     D(b, a, n, dt, &bdx1, &bdy1, &bdz1);
 
-    if(log_level >= 3 && (n % (int)(N/5) == 0 || n<5 || N-n<7)) log_step(a, b, n);
-    
     // Store the intermediate value yi at n+1
     a->x[n+1] = a->x[n] + adx1; 
     a->y[n+1] = a->y[n] + ady1; 
@@ -305,8 +438,8 @@ void solve_heun(domain *a, domain *b, double dt, int N) {
   } // End of for loop.
 
   // At this point, the whole solution arrays should be populated.
-  if(log_level>0) {
-    fprintf(log_file, "\n\n------------------------------------------------\nDone after %li", time(0)-t0);
+  if(_log_level>0) {
+    fprintf(log_file, "\n\n------------------------------------------------\nsolve_heun() done after %li\n\n", time(0)-t0);
     fclose(log_file);
   }
 }
