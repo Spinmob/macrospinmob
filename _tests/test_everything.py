@@ -1,28 +1,31 @@
-# -*- coding: utf-8 -*-
-"""
-Module for testing _data.py
-"""
-import os                # For loading fixtures
+test_domain = True
+test_api    = False
+test_solver = True
+
+import os                
+import shutil
 import numpy        as np
-import pylab
 import spinmob      as sm
-import macrospinmob as ms
+import macrospinmob as ms; ms.debug_enabled = True
+import unittest     as ut
 
-import unittest as _ut
 
-a = b = c = d = api = None
-
+a = api = s = None
 path_log = os.getcwd() + '/engine.log'
 
-class Test_everything(_ut.TestCase):
+class Test_everything(ut.TestCase):
     """
-    Test class for databox.
+    Test class for solver and api.
     """
 
     def test_domain(self):
         """
         Plays with the _domain() object.
         """
+        if not test_domain: 
+            print('\nNot running test_domain()')
+            return
+        
         global a
         
         # Create a domain
@@ -46,6 +49,10 @@ class Test_everything(_ut.TestCase):
         """
         Basic playtime with solver api.
         """
+        if not test_api:
+            print('\nNot running test_api()')
+            return
+        
         global api
         
         # Create an api instance
@@ -166,25 +173,67 @@ class Test_everything(_ut.TestCase):
             np.sqrt(4*api['a/damping']*1.4e-23*api['a/T']*1.25663706e-6/api['a/gyro']/api['a/M']/api['a/V']/api['dt'])
             ) + '\nstd(a.Lx) = ' + str(np.std(api.a.Lx)))
         
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        # Remove the log file if it exists
+        # CLEANUP Remove the log file if it exists
         if os.path.exists(path_log): os.remove(path_log)
+    
+    def test_solver(self):
+        """
+        Test the main solver object.
+        """
+        if not test_solver:
+            print('\nNot running test_solver()')
+            return
+        
+        global s
+        
+        # Remove any egg_settings from previous runs
+        if os.path.exists('egg_settings'): shutil.rmtree('egg_settings')
+        
+        # Create an instance
+        s = ms.solver()
+        
+        # First set a few things
+        s['T'] = 270
+        self.assertEqual(s['a/T'], 270)
+        self.assertEqual(s['b/T'], 270)
+        
+        s['y0'] = 0.1
+        self.assertEqual(s['a/y0'], 0.1)
+        self.assertEqual(s['b/y0'], 0.1)
+        
+        s['V'] = 1000
+        self.assertEqual(s['a/V'], 1000)
+        self.assertEqual(s['b/V'], 1000)
+        
+        s['a/X'] = 0.777
+        self.assertEqual(s['a/X'], 0.777)
+        self.assertNotEqual(s['b/X'], 0.777)
+        
+        s['dt'] = 170e-15
+        s['steps'] = 1000
+        s['continuous'] = True
+        s['a/mode'] = 0
+        s['iterations'] = 1
+        
+        # Now make sure the _transfer() process works, especially for ones 
+        # having different names or units.
+        s._transfer_all_to_api()
+        self.assertEqual(s.api.a['T'], 270)
+        self.assertEqual(s.api.b['T'], 270)
+        self.assertEqual(s.api['a/X'], 0.777)
+        self.assertNotEqual(s.api['b/X'], 0.777)
+        self.assertEqual(s.api['dt'], 170e-15)
+        
+        # Let's take a look at that thermal field
+        for n in range(10):
+            s.button_run.click()
+            s.plot_inspect['b/Lx'] = s.b.Lx  
+            s.plot_inspect.plot()
+        
+        
+        # CLEANUP: Remove egg_settings for next time
+        if os.path.exists('egg_settings'): shutil.rmtree('egg_settings')
         
         
         
-if __name__ == "__main__": _ut.main()
+if __name__ == "__main__": ut.main()
