@@ -230,7 +230,22 @@ class Test_everything(ut.TestCase):
             s.plot_inspect['b/Lx'] = s.b.Lx  
             s.plot_inspect.plot()
         
+        # Now clear out the columns and let's test energy conservation
+        s.plot_inspect.clear()
         s['a/mode'] = 1
+        s['b/mode'] = 0
+        
+        s['a/X']       = -0.1
+        s['a/Bx']      = 0.3
+        s['a/damping'] = 0
+        s['a/T']       = 0
+        s['a/y0']      = 1
+        
+        s['continuous'] = False
+        s['get_energy'] = True
+        
+        s.run()
+        
         
         # CLEANUP: Remove egg_settings for next time
         if os.path.exists('egg_settings'): shutil.rmtree('egg_settings')

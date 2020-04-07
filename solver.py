@@ -15,6 +15,8 @@ if   _platform in ['win32']:  _path_dll = _os.path.join(_os.path.split(__file__)
 elif _platform in ['darwin']: _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-osx.so')
 else:                         _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-linux.so')
 
+# Used to get the path to included scripts
+import macrospinmob as _ms
 
 # Get the engine.
 _engine = _c.cdll.LoadLibrary(_path_dll)
@@ -644,9 +646,10 @@ class solver():
         self.window = _g.Window(title='Macrospin(mob)', autosettings_path='solver.window.txt', size=[1000,550])
         
         # Top row controls for the "go" button, etc
-        self.grid_top        = self.window  .add(_g.GridLayout(False), alignment=1) 
-        self.button_run      = self.grid_top.add(_g.Button('Go!', True))
-        self.label_iteration = self.grid_top.add(_g.Label(''))
+        self.grid_top          = self.window  .add(_g.GridLayout(False), alignment=1) 
+        self.button_run        = self.grid_top.add(_g.Button('Go!', True))
+        self.button_get_energy = self.grid_top.add(_g.Button('Get Energy')).disable()
+        self.label_iteration   = self.grid_top.add(_g.Label(''))
         
         # Bottom row controls for settings and plots.
         self.window.new_autorow()
@@ -659,6 +662,7 @@ class solver():
         self.settings.add_parameter('solver/dt',     1e-12, dec=True,                  siPrefix=True, suffix='s')
         self.settings.add_parameter('solver/steps',   5000, dec=True, limits=(2,None), siPrefix=True, suffix='steps')
         self.settings.add_parameter('solver/continuous', False)
+        self.settings.add_parameter('solver/get_energy', False)
         
         self.settings.add_parameter('a/solver/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
         
@@ -827,11 +831,16 @@ class solver():
         self._build_gui_test()
 
         # Connect the other controls
-        self.button_run     .signal_clicked.connect(self._button_run_clicked)
-        self.button_run_test.signal_clicked.connect(self._button_run_test_clicked)
+        self.button_run       .signal_clicked.connect(self._button_run_clicked)
+        self.button_get_energy.signal_clicked.connect(self._button_get_energy_clicked)
+        self.button_run_test  .signal_clicked.connect(self._button_run_test_clicked)
 
         # Always update the start dots when we change a setting
         self.settings.connect_any_signal_changed(self._update_start_dots)
+
+        # Add extra globals to the plotters
+        self.plot_inspect.plot_script_globals = dict(solver=self)
+        self.plot_test   .plot_script_globals = dict(solver=self)
 
         # Let's have a look!
         self.window.show()
@@ -882,20 +891,17 @@ class solver():
         """
         Creates a "useful" default script.
         """
-        return """x = None
-xlabels = 'Step'
-y = []
-ylabels = []
-for n in range(1, len(d.ckeys)):
-  y      .append(d[n])
-  ylabels.append(d.ckeys[n])
-"""
+        f = open(_os.path.join(_ms.__path__[0], 'plot_scripts', 'inspect_basic.py'))
+        s = f.read()
+        f.close()
+        return s
 
     def initialize_plot_inspect(self):
         """
         Clears the Inspect plot and populates it with empty arrays.
         """
         self.plot_inspect.clear()
+        self.button_get_energy.disable()
 
     def _update_start_dots(self):
         """
@@ -1012,6 +1018,16 @@ for n in range(1, len(d.ckeys)):
             
         self.button_run_test.set_checked(False)
 
+    def _button_get_energy_clicked(self, *a):
+        """
+        Caculates energy for both and updates the plot and processor.
+        """
+        self.get_energy('a')
+        self.get_energy('b')
+        self.plot_inspect['U'] = self.plot_inspect['Ua'] + self.plot_inspect['Ub']
+        self.plot_inspect.plot()
+        self.process_inspect.run()
+    
     def run(self):
         """
         Run the specified simulation.
@@ -1044,23 +1060,19 @@ for n in range(1, len(d.ckeys)):
         # Transfer the results to the inspector
         self.plot_inspect['t']  = self.api.dt*_n.array(range(self.api.steps))
         
-        if self['a/mode']:
-            self.plot_inspect['ax'] = self.api.a.x
-            self.plot_inspect['ay'] = self.api.a.y
-            self.plot_inspect['az'] = self.api.a.z
-        else:
-            self.plot_inspect.pop_column('ax', True)
-            self.plot_inspect.pop_column('ay', True)
-            self.plot_inspect.pop_column('az', True)
+        # Always include the columns
+        self.plot_inspect['ax'] = self.api.a.x
+        self.plot_inspect['ay'] = self.api.a.y
+        self.plot_inspect['az'] = self.api.a.z
+        self.plot_inspect['bx'] = self.api.b.x
+        self.plot_inspect['by'] = self.api.b.y
+        self.plot_inspect['bz'] = self.api.b.z
         
-        if self['b/mode']:
-            self.plot_inspect['bx'] = self.api.b.x
-            self.plot_inspect['by'] = self.api.b.y
-            self.plot_inspect['bz'] = self.api.b.z
-        else:
-            self.plot_inspect.pop_column('bx', True)
-            self.plot_inspect.pop_column('by', True)
-            self.plot_inspect.pop_column('bz', True)
+        # We can calculate the energy now
+        self.button_get_energy.enable()
+        
+        # Get energy if we're supposed to
+        if self['get_energy']: self.button_get_energy.click()
             
         # Update the plot and analyze the result
         self.plot_inspect.plot()
@@ -1187,7 +1199,7 @@ for n in range(1, len(d.ckeys)):
         if len(s) == 1:            
             
             # Solver parameter
-            if s[0] in ['iterations', 'dt', 'steps', 'continuous']:
+            if s[0] in ['iterations', 'dt', 'steps', 'continuous', 'get_energy']:
                 self.set('solver/'+s[0], value)
                 return self
                 
@@ -1249,7 +1261,7 @@ for n in range(1, len(d.ckeys)):
 
         """
         # For solver settings, return them with simple keys
-        if key in ['dt', 'steps', 'continuous', 'T', 'iterations']: return self.settings['solver/'+key]
+        if key in ['dt', 'steps', 'continuous', 'T', 'iterations', 'get_energy']: return self.settings['solver/'+key]
         
         # If the key is right there in the plot_inspect, return that
         if key in self.plot_inspect.ckeys: return self.plot_inspect[key]
@@ -1395,24 +1407,21 @@ for n in range(1, len(d.ckeys)):
         return efficiency*self[domain+'/gyro']*hbar*1e-3 / \
                (2*ec*(self[domain+'/M']/u0)*volume_nm3*1e-27)
     
-    def get_magnetic_energy(self, domain='a'):
+    def get_energy(self, domain='a'):
         """
         Calculates the magnetic energy arising from the applied, exchange,
         anisotropy, and dipolar field for the specified domain.
         
-        Stores this as a new column 'U<domain>' in self.plot_inspect, creates
-        histogram columns 'U<domain>_K' (temperature bins), 'B<domain>' 
-        (Boltzmann curve), and 'P<domain>' (measured probability), then
-        returns the average value.
+        Stores this as a new column 'U'+domain in self.plot_inspect.
         
         Parameters
         ----------
         domain='a'
-            Domain for which to do the calculation.
+            Domain for which to do the calculation. Can be either 'a' or 'b'.
             
         Returns
         -------
-        average magnetic energy for the current result.
+        self
         
         """
         # For quick coding
@@ -1423,17 +1432,8 @@ for n in range(1, len(d.ckeys)):
         if a == 'a': b = 'b'
         else:        b = 'a'
         
-        # Add plot styles
-        if a == 'a':
-            self.plot_test.styles.append(dict(pen='#7777FF'))
-            self.plot_test.styles.append(dict(symbol='+', symbolPen='#7777FF', pen=None))
-        else:
-            self.plot_test.styles.append(dict(pen='#FF7777'))
-            self.plot_test.styles.append(dict(symbol='+', symbolPen='#FF7777', pen=None))
-
-        
         if self[a+'x'] is None: 
-            print('ERROR get_magnetic_energy(): No data from simulation?')
+            print('ERROR get_energy(): No data from simulation?')
             return
         
         # Formula is 0.5*Ms*V*B*cos(theta), so calculate some constants
@@ -1480,28 +1480,7 @@ for n in range(1, len(d.ckeys)):
         # Energy!
         self.plot_inspect['U'+a] = -0.5*MsV*(self[a+'x']*Bx + self[a+'y']*By + self[a+'z']*Bz)
         
-        # Bin everything from this run.
-        Na, bins = _n.histogram(self.plot_inspect['U'+a], self.settings_test['thermal_noise/bins'])
-            
-        # Get x-axis from the midpoints of the bin edges
-        Ta = 0.5*(bins[1:]+bins[0:len(bins)-1])/kB
-        Ta = Ta-Ta[0]
-        
-        # Theory
-        Ba = _n.exp(-Ta/self[a+'/T'])
-        
-        # Populate the test tab
-        self.settings.send_to_databox_header(self.plot_test)
-        
-        self.plot_test['U'+a+'_K'] = Ta
-        self.plot_test['B'+a]   = Ba / _n.sum(Ba)
-        self.plot_test['P'+a]   = Na / _n.sum(Na)
-        
-        # Set the plot to "triples" if it's not on "edit"
-        if not self.plot_test.combo_autoscript.get_index() == 0:
-            self.plot_test.combo_autoscript.set_index(3)
-        
-        return _n.mean(self.plot_inspect['U'+a])    
+        return self 
     
     def test_thermal_noise(self):
         """
@@ -1512,6 +1491,38 @@ for n in range(1, len(d.ckeys)):
         -------
         self
         """
+
+        # # Add plot styles
+        # if a == 'a':
+        #     self.plot_test.styles.append(dict(pen='#7777FF'))
+        #     self.plot_test.styles.append(dict(symbol='+', symbolPen='#7777FF', pen=None))
+        # else:
+        #     self.plot_test.styles.append(dict(pen='#FF7777'))
+        #     self.plot_test.styles.append(dict(symbol='+', symbolPen='#FF7777', pen=None))
+        #
+        # Bin everything from this run.
+        # Na, bins = _n.histogram(self.plot_inspect['U'+a], self.settings_test['thermal_noise/bins'])
+            
+        # # Get x-axis from the midpoints of the bin edges
+        # Ta = 0.5*(bins[1:]+bins[0:len(bins)-1])/kB
+        # Ta = Ta-Ta[0]
+        
+        # # Theory
+        # Ba = _n.exp(-Ta/self[a+'/T'])
+        
+        # # Populate the test tab
+        # self.settings.send_to_databox_header(self.plot_test)
+        
+        # self.plot_test['U'+a+'_K'] = Ta
+        # self.plot_test['B'+a]   = Ba / _n.sum(Ba)
+        # self.plot_test['P'+a]   = Na / _n.sum(Na)
+        
+        # # Set the plot to "triples" if it's not on "edit"
+        # if not self.plot_test.combo_autoscript.get_index() == 0:
+        #     self.plot_test.combo_autoscript.set_index(3)
+        
+        # return _n.mean(self.plot_inspect['U'+a])   
+        
 
         # Make sure the temperature is not zero (otherwise we're hosed)
         if self['T'] == 0: self['T'] = 293; # Why not.
