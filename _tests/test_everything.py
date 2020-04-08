@@ -240,11 +240,35 @@ class Test_everything(ut.TestCase):
         s['a/damping'] = 0
         s['a/T']       = 0
         s['a/y0']      = 1
+        s['a/Dyy']     = 1
         
         s['continuous'] = False
         s['get_energy'] = True
         
         s.run()
+        
+        self.assertAlmostEqual(s['Ua'][0], s['Ua'][-1], 4)
+        
+        # Same for other domain
+        # Now clear out the columns and let's test energy conservation
+        s.plot_inspect.clear()
+        s['a/mode'] = 0
+        s['b/mode'] = 1
+        
+        s['b/X']       = -0.1
+        s['b/Bx']      = 0.3
+        s['b/damping'] = 0
+        s['b/T']       = 0
+        s['b/y0']      = 1
+        s['b/Dyy']     = 1
+        
+        s['continuous'] = False
+        s['get_energy'] = True
+        
+        s.run()
+        
+        self.assertAlmostEqual(s['Ub'][0], s['Ub'][-1], 4)
+        
         
         
         # CLEANUP: Remove egg_settings for next time

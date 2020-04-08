@@ -1443,14 +1443,18 @@ class solver():
         MsV = (self[a+'/M']/u0) * (self[a+'/V']*1e-27) 
         
         # Applied field
-        B0x = self[a+'/Bx']
-        B0y = self[a+'/By']
-        B0z = self[a+'/Bz']
+        if self[a+'/applied_field']:
+            Ax = self[a+'/Bx']
+            Ay = self[a+'/By']
+            Az = self[a+'/Bz']
+        else: Ax = Ay = Az = 0
         
         # Anisotropy
-        BAx = -self[a+'/M'] * (self[a+'/Nxx']*self[a+'x'] + self[a+'/Nxy']*self[a+'y'] + self[a+'/Nxz']*self[a+'z'])
-        BAy = -self[a+'/M'] * (self[a+'/Nyy']*self[a+'y'] + self[a+'/Nyz']*self[a+'z'] + self[a+'/Nyx']*self[a+'x'])
-        BAz = -self[a+'/M'] * (self[a+'/Nyz']*self[a+'z'] + self[a+'/Nzx']*self[a+'x'] + self[a+'/Nzy']*self[a+'y'])
+        if self[a+'/anisotropy']:
+            Nx = -self[a+'/M'] * (self[a+'/Nxx']*self[a+'x'] + self[a+'/Nxy']*self[a+'y'] + self[a+'/Nxz']*self[a+'z'])
+            Ny = -self[a+'/M'] * (self[a+'/Nyy']*self[a+'y'] + self[a+'/Nyz']*self[a+'z'] + self[a+'/Nyx']*self[a+'x'])
+            Nz = -self[a+'/M'] * (self[a+'/Nzz']*self[a+'z'] + self[a+'/Nzx']*self[a+'x'] + self[a+'/Nzy']*self[a+'y'])
+        else: Nx = Ny = Nz = 0
         
         # Get the other domain's vector
         if b == 'b':
@@ -1463,19 +1467,23 @@ class solver():
             bz = self.a.z
                     
         # Dipole
-        BDx = -self[b+'/M'] * (self[a+'/Dxx']*bx + self[a+'/Dxy']*by + self[a+'/Dxz']*bz)
-        BDy = -self[b+'/M'] * (self[a+'/Dyy']*by + self[a+'/Dyz']*bz + self[a+'/Dyx']*bx)
-        BDz = -self[b+'/M'] * (self[a+'/Dyz']*bz + self[a+'/Dzx']*bx + self[a+'/Dzy']*by)
+        if self[a+'/dipole']:
+            Dx = -self[b+'/M'] * (self[a+'/Dxx']*bx + self[a+'/Dxy']*by + self[a+'/Dxz']*bz)
+            Dy = -self[b+'/M'] * (self[a+'/Dyy']*by + self[a+'/Dyz']*bz + self[a+'/Dyx']*bx)
+            Dz = -self[b+'/M'] * (self[a+'/Dyz']*bz + self[a+'/Dzx']*bx + self[a+'/Dzy']*by)
+        else: Dx = Dy = Dz = 0
     
         # Exchange
-        BXx = self[a+'/X'] * bx
-        BXy = self[a+'/X'] * by
-        BXz = self[a+'/X'] * bz
+        if self[a+'/other_torques']:
+            Xx = self[a+'/X'] * bx
+            Xy = self[a+'/X'] * by
+            Xz = self[a+'/X'] * bz
+        else: Xx = Xy = Xz = 0
         
         # Total field
-        Bx = B0x + BAx + BDx + BXx
-        By = B0y + BAy + BDy + BXy
-        Bz = B0z + BAz + BDz + BXz
+        Bx = Ax + 0.5*Nx + Dx + Xx
+        By = Ay + 0.5*Ny + Dy + Xy
+        Bz = Az + 0.5*Nz + Dz + Xz
         
         # Energy!
         self.plot_inspect['U'+a] = -0.5*MsV*(self[a+'x']*Bx + self[a+'y']*By + self[a+'z']*Bz)
