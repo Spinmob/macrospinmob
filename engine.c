@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <stdbool.h>
 
 #define kB 1.380649e-23     // Boltzmann constant [J/K]
 #define u0 1.25663706212e-6 // Vacuum permeability [H/m | N/A^2]
@@ -83,6 +84,9 @@ double random_gaussian()
 // having Python interact with a C++ class. Blame the C++ compilers.
 typedef struct domain {
 
+    // 0 = disabled, 1 = LLG
+    bool enable;    
+
     //////////////////////////////
     // Model Inputs 
     //////////////////////////////
@@ -91,6 +95,7 @@ typedef struct domain {
     long n_langevin_valid;
 
     // Temperature
+    bool enable_T;
     double T, *Ts;
 
     // Volume of magnetic material (m^3), used only for Langevin field
@@ -103,30 +108,37 @@ typedef struct domain {
     double M, *Ms;
 
     // Gilbert damping parameter [unitless]
+    bool enable_damping;
     double damping, *dampings;         
 
     // Exchange-like field strength [T], applied in the direction of the other domain's unit vector
+    bool enable_X; 
     double X, *Xs; 
 
     // Spin transfer torque (rate) parallel to other domain [rad / s]
-    double STT, *STTs;
+    bool enable_S;
+    double S, *Ss;
 
     // Other torque (rate) unrelated to either domain [rad / s]
+    bool enable_Q;
     double Qx, *Qxs;
     double Qy, *Qys; 
     double Qz, *Qzs; 
 
     // Applied field components [T]
+    bool enable_B;
     double Bx, *Bxs;
     double By, *Bys; 
     double Bz, *Bzs; 
 
     // Anisotropy tensor elements [unitless], defined such that Nxx+Nyy+Nzz=1 for an aligned ellipsoid
+    bool enable_N;
     double Nxx, *Nxxs, Nxy, *Nxys, Nxz, *Nxzs; 
     double Nyx, *Nyxs, Nyy, *Nyys, Nyz, *Nyzs;
     double Nzx, *Nzxs, Nzy, *Nzys, Nzz, *Nzzs;
 
     // Dipole tensor [unitless], representing the fraction of the other layer's saturation magnetization
+    bool enable_D;
     double Dxx, *Dxxs, Dxy, *Dxys, Dxz, *Dxzs;       
     double Dyx, *Dyxs, Dyy, *Dyys, Dyz, *Dyzs; 
     double Dzx, *Dzxs, Dzy, *Dzys, Dzz, *Dzzs;
@@ -134,9 +146,6 @@ typedef struct domain {
     //////////////////////////////
     // Settings
     //////////////////////////////
-
-    // 0 = disabled, 1 = LLG
-    int mode;    
 
     // Initial conditions
     double x0, y0, z0;
@@ -158,7 +167,7 @@ void log_step(domain *a, domain *b, long n) {
     fprintf(log_file, "  a->M=%f,       pointer=%p\n",     a->M,       a->Ms);
     fprintf(log_file, "  a->damping=%f, pointer=%p\n",     a->damping, a->dampings);
     fprintf(log_file, "  a->X=%f,       pointer=%p\n",     a->X,       a->Xs);
-    fprintf(log_file, "  a->STT=%f,     pointer=%p\n",     a->STT,     a->STTs);
+    fprintf(log_file, "  a->S=%f,       pointer=%p\n",     a->S,       a->Ss);
     fprintf(log_file, "\n");
 }
 
@@ -169,41 +178,41 @@ void get_input_parameters(domain *a, long n) {
 
     // Always check that the array exists first, then assume it's
     // of sufficient length.
-    if(a->Ts       != NULL) a->T       = a->Ts[n];       // Temperature
-    if(a->gyros    != NULL) a->gyro    = a->gyros[n];    // gyro
-    if(a->Ms       != NULL) a->M       = a->Ms[n];       // magnetization
-    if(a->Vs       != NULL) a->V       = a->Vs[n];       // Magnetic volume (m^3)
-    if(a->dampings != NULL) a->damping = a->dampings[n]; // damping
-    if(a->Xs       != NULL) a->X       = a->Xs[n];       // exchange
-    if(a->STTs     != NULL) a->STT     = a->STTs[n];     // spin torque
+    if(a->Ts      ) a->T       = a->Ts[n];       // Temperature
+    if(a->gyros   ) a->gyro    = a->gyros[n];    // gyro
+    if(a->Ms      ) a->M       = a->Ms[n];       // magnetization
+    if(a->Vs      ) a->V       = a->Vs[n];       // Magnetic volume (m^3)
+    if(a->dampings) a->damping = a->dampings[n]; // damping
+    if(a->Xs      ) a->X       = a->Xs[n];       // exchange
+    if(a->Ss      ) a->S     = a->Ss[n];     // spin transfer from other layer
     
-    if(a->Bxs != NULL) a->Bx = a->Bxs[n]; // applied B-field
-    if(a->Bys != NULL) a->By = a->Bys[n];
-    if(a->Bzs != NULL) a->Bz = a->Bzs[n];
+    if(a->Bxs) a->Bx = a->Bxs[n]; // applied B-field
+    if(a->Bys) a->By = a->Bys[n];
+    if(a->Bzs) a->Bz = a->Bzs[n];
 
-    if(a->Qxs != NULL) a->Qx = a->Qxs[n]; // other independent torQues
-    if(a->Qys != NULL) a->Qy = a->Qys[n];
-    if(a->Qzs != NULL) a->Qz = a->Qzs[n];
+    if(a->Qxs) a->Qx = a->Qxs[n]; // other independent torQues
+    if(a->Qys) a->Qy = a->Qys[n];
+    if(a->Qzs) a->Qz = a->Qzs[n];
 
-    if(a->Nxxs != NULL) a->Nxx = a->Nxxs[n]; // aNisotropy
-    if(a->Nxys != NULL) a->Nxy = a->Nxys[n];
-    if(a->Nxzs != NULL) a->Nxz = a->Nxzs[n];
-    if(a->Nyxs != NULL) a->Nyx = a->Nyxs[n];
-    if(a->Nyys != NULL) a->Nyy = a->Nyys[n];
-    if(a->Nyzs != NULL) a->Nyz = a->Nyzs[n];
-    if(a->Nzxs != NULL) a->Nzx = a->Nzxs[n];
-    if(a->Nzys != NULL) a->Nzy = a->Nzys[n];
-    if(a->Nzzs != NULL) a->Nzz = a->Nzzs[n];
+    if(a->Nxxs) a->Nxx = a->Nxxs[n]; // aNisotropy (T)
+    if(a->Nxys) a->Nxy = a->Nxys[n];
+    if(a->Nxzs) a->Nxz = a->Nxzs[n];
+    if(a->Nyxs) a->Nyx = a->Nyxs[n];
+    if(a->Nyys) a->Nyy = a->Nyys[n];
+    if(a->Nyzs) a->Nyz = a->Nyzs[n];
+    if(a->Nzxs) a->Nzx = a->Nzxs[n];
+    if(a->Nzys) a->Nzy = a->Nzys[n];
+    if(a->Nzzs) a->Nzz = a->Nzzs[n];
     
-    if(a->Dxxs != NULL) a->Dxx = a->Dxxs[n]; // Dipole
-    if(a->Dxys != NULL) a->Dxy = a->Dxys[n];
-    if(a->Dxzs != NULL) a->Dxz = a->Dxzs[n];
-    if(a->Dyxs != NULL) a->Dyx = a->Dyxs[n];
-    if(a->Dyys != NULL) a->Dyy = a->Dyys[n];
-    if(a->Dyzs != NULL) a->Dyz = a->Dyzs[n];
-    if(a->Dzxs != NULL) a->Dzx = a->Dzxs[n];
-    if(a->Dzys != NULL) a->Dzy = a->Dzys[n];
-    if(a->Dzzs != NULL) a->Dzz = a->Dzzs[n];
+    if(a->Dxxs) a->Dxx = a->Dxxs[n]; // Dipole (T)
+    if(a->Dxys) a->Dxy = a->Dxys[n];
+    if(a->Dxzs) a->Dxz = a->Dxzs[n];
+    if(a->Dyxs) a->Dyx = a->Dyxs[n];
+    if(a->Dyys) a->Dyy = a->Dyys[n];
+    if(a->Dyzs) a->Dyz = a->Dyzs[n];
+    if(a->Dzxs) a->Dzx = a->Dzxs[n];
+    if(a->Dzys) a->Dzy = a->Dzys[n];
+    if(a->Dzzs) a->Dzz = a->Dzzs[n];
 };
 
 // Calculate a single step for this domain, if enabled.
@@ -221,19 +230,21 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
     get_input_parameters(b, n);
     
     // If our domain's dynamics are not enabled, no step
-    if(a->mode == 0) {
-        *dx = *dy = *dz = 0;
-        return;
+    if(!a->enable) {
+      *dx = *dy = *dz = 0;
+      return;
     }
 
-    // Intermediate values
-    double Nx, Ny, Nz; // aNisotropy field [T] from this domain
-    double Dx, Dy, Dz; // Dipolar field [T] from "other" domain
-    double Xx, Xy, Xz; // Exchange field [T] from "other" domain
-    double Fx, Fy, Fz; // Non-damping forcer [rad/sec]
-    double vx, vy, vz; // Total non-damping torque [rad/sec]
-    double Bx, By, Bz; // Total applied field, including Langevin
+    // Intermediate values. Static so as not to keep re-creating them.
+    static double Bx, By, Bz; // Total field, including everything.
     
+    // Start with the applied field
+    if(a->enable_B) {
+      Bx = a->Bx;
+      By = a->By;
+      Bz = a->Bz;
+    } else Bx = By = Bz = 0;
+
     // Prefactor (involves square root, don't recalculate unless we need to)
     static double langevin_prefactor; 
 
@@ -241,31 +252,24 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
     static double T, damping, gyro, M, V;
 
     // Initialization for the first step
-    if(n==0) {
-      
+    if(n==0) { 
       if(_log_level >= 4) fprintf(log_file, "  Initializing Langevin\n");
     
       // Set all the "previous values" to zero, to trigger a new Langevin calculation
       langevin_prefactor = T = damping = gyro = M = V = 0;
     }
 
-    // Get the magnetic field
-    Bx = a->Bx;
-    By = a->By;
-    Bz = a->Bz;
-
-    // Easy if we have zero temperature.
-    if(a->T == 0) {
+    // Thermal field
+    if(!a->enable_T || !a->T) { 
+      
+      // Easy if T=0. Remember the value, but don't bother adding to Bx, By, Bz
       a->Lx[n] = 0;
       a->Ly[n] = 0;
       a->Lz[n] = 0;
-    } 
     
-    // Otherwise, calculate the Langevin field
-    else {
-      if(_log_level >= 4) 
-        fprintf(log_file, "  T=%3f damp=%3f gyro=%3G M=%3f V=%3G\n", 
-                a->T, a->damping, a->gyro, a->M, a->V);
+    // Otherwise we have to calculate it, only ONCE per step.
+    } else {
+      if(_log_level >= 4) fprintf(log_file, "  T=%3f damp=%3f gyro=%3G M=%3f V=%3G\n", a->T, a->damping, a->gyro, a->M, a->V);
 
       // Only calculate a new value if we haven't already done so for this index
       if(n > a->n_langevin_valid) {
@@ -281,7 +285,8 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
           V       = a->V;
 
           // Calculate the prefactor
-          langevin_prefactor = sqrt( 4*u0*damping*kB*T / (gyro*M*V*dt) );
+          if(damping) langevin_prefactor = sqrt( 4*u0*damping*kB*T / (gyro*M*V*dt) );
+          else        langevin_prefactor = 0;
           
           if(_log_level >= 4) fprintf(log_file, "  langevin_prefactor=%3G\n", langevin_prefactor);
         } 
@@ -301,40 +306,72 @@ void D(domain *a, domain *b, long n, double dt, double *dx, double *dy, double *
       Bx += a->Lx[n];
       By += a->Ly[n];
       Bz += a->Lz[n];
-    
     } // End of T>0
 
-    // Calculate the aNisotropy field
-    Nx = -a->M*(a->Nxx*a->x[n] + a->Nxy*a->y[n] + a->Nxz*a->z[n]);
-    Ny = -a->M*(a->Nyy*a->y[n] + a->Nyz*a->z[n] + a->Nyx*a->x[n]);
-    Nz = -a->M*(a->Nzz*a->z[n] + a->Nzx*a->x[n] + a->Nzy*a->y[n]);
+    // Add in the aNisotropy field
+    if(a->enable_N) {
+      Bx -= a->Nxx*a->x[n] + a->Nxy*a->y[n] + a->Nxz*a->z[n];
+      By -= a->Nyy*a->y[n] + a->Nyz*a->z[n] + a->Nyx*a->x[n];
+      Bz -= a->Nzz*a->z[n] + a->Nzx*a->x[n] + a->Nzy*a->y[n];
+    }
     
     // Now the Dipolar field from b
-    Dx = -b->M*(a->Dxx*b->x[n] + a->Dxy*b->y[n] + a->Dxz*b->z[n]);
-    Dy = -b->M*(a->Dyy*b->y[n] + a->Dyz*b->z[n] + a->Dyx*b->x[n]);
-    Dz = -b->M*(a->Dzz*b->z[n] + a->Dzx*b->x[n] + a->Dzy*b->y[n]);
+    if(a->enable_D) {
+      Bx -= a->Dxx*b->x[n] + a->Dxy*b->y[n] + a->Dxz*b->z[n];
+      By -= a->Dyy*b->y[n] + a->Dyz*b->z[n] + a->Dyx*b->x[n];
+      Bz -= a->Dzz*b->z[n] + a->Dzx*b->x[n] + a->Dzy*b->y[n];
+    }
     
     // Now the eXchange field from b
-    Xx = a->X*b->x[n];
-    Xy = a->X*b->y[n];
-    Xz = a->X*b->z[n];
-
-    // Now we can get the components of F. Bx, By, and Bz include the Langevin values already.
-    // (We combine the two so that if T=0 the user needn't supply langevin arrays)
-    Fx = -a->gyro*(Bx+Nx+Dx+Xx) + a->STT*(a->z[n]*b->y[n] - a->y[n]*b->z[n]) + a->z[n]*a->Qy - a->y[n]*a->Qz;
-    Fy = -a->gyro*(By+Ny+Dy+Xy) + a->STT*(a->x[n]*b->z[n] - a->z[n]*b->x[n]) + a->x[n]*a->Qz - a->z[n]*a->Qx;
-    Fz = -a->gyro*(Bz+Nz+Dz+Xz) + a->STT*(a->y[n]*b->x[n] - a->x[n]*b->y[n]) + a->y[n]*a->Qx - a->x[n]*a->Qy;
+    if(a->enable_X && a->X) {
+      Bx += a->X*b->x[n];
+      By += a->X*b->y[n];
+      Bz += a->X*b->z[n];
+    }
     
+    // Now we can get the components of F, the "non-damping forcers".
+    static double Fx, Fy, Fz; // Non-damping forcer [rad/sec]
+    Fx = -a->gyro*Bx;  
+    Fy = -a->gyro*By;  
+    Fz = -a->gyro*Bz;  
+    
+    // Add the spin transfer torque
+    if(a->enable_S && a->S) {
+      Fx += a->S*(a->z[n]*b->y[n] - a->y[n]*b->z[n]);
+      Fy += a->S*(a->x[n]*b->z[n] - a->z[n]*b->x[n]);
+      Fz += a->S*(a->y[n]*b->x[n] - a->x[n]*b->y[n]);
+    }
+
+    // Add the external torques
+    if(a->enable_Q) {
+      Fx += a->z[n]*a->Qy - a->y[n]*a->Qz;
+      Fy += a->x[n]*a->Qz - a->z[n]*a->Qx;
+      Fz += a->y[n]*a->Qx - a->x[n]*a->Qy;
+    }
+
     // Now we can compute the total non-damping torque for this step.
+    static double vx, vy, vz; // Total non-damping torque perpendicular to a [rad/sec]
     vx = a->y[n]*Fz - a->z[n]*Fy; 
     vy = a->z[n]*Fx - a->x[n]*Fz; 
     vz = a->x[n]*Fy - a->y[n]*Fx; 
 
-    // We store the step magnitude to help with Heun method.
-    double scale = dt/(1.0+a->damping*a->damping);
-    *dx = ( vx + a->damping*(a->y[n]*vz-a->z[n]*vy) ) * scale;
-    *dy = ( vy + a->damping*(a->z[n]*vx-a->x[n]*vz) ) * scale;
-    *dz = ( vz + a->damping*(a->x[n]*vy-a->y[n]*vx) ) * scale;
+    // Include damping and store the step magnitude to help with Heun method.
+    if(a->enable_damping && a->damping) {
+      static double scale, damping=0;
+
+      // Only recalculate the scale factor if the damping has changed.
+      // Division is *a little* expensive (more than multiplication, but not like a square root!)
+      if(a->damping != damping) scale = dt/(1.0+a->damping*a->damping);
+      *dx = ( vx + a->damping*(a->y[n]*vz-a->z[n]*vy) ) * scale;
+      *dy = ( vy + a->damping*(a->z[n]*vx-a->x[n]*vz) ) * scale;
+      *dz = ( vz + a->damping*(a->x[n]*vy-a->y[n]*vx) ) * scale;
+    
+    // No damping
+    } else {
+      *dx = vx*dt;
+      *dy = vy*dt;
+      *dz = vz*dt;
+    }
 }
 
 

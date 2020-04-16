@@ -1,5 +1,5 @@
 test_domain = True
-test_api    = False
+test_api    = True
 test_solver = True
 
 import os                
@@ -17,6 +17,10 @@ class Test_everything(ut.TestCase):
     """
     Test class for solver and api.
     """
+    def run(self, result=None):
+        """ Stop after first error """
+        if not result.errors:
+            super(Test_everything, self).run(result)
 
     def test_domain(self):
         """
@@ -39,10 +43,10 @@ class Test_everything(ut.TestCase):
         self.assertEqual(a.V, 2e-23)
         
         # Set several things
-        a.set_multiple(T=377, V=1e-27)
+        a.set_multiple(T=377, V=1e-27, enable_D=True)
         self.assertEqual(a['T'], 377.0)
         self.assertEqual(a['V'], 1e-27)
-        
+        self.assertEqual(a['enable_D'], True)
         return
 
     def test_solver_api(self):
@@ -111,7 +115,7 @@ class Test_everything(ut.TestCase):
         
         
         
-        # Now test that continuous mode works
+        # Now test that continuous works
         api.reset()
         api.run()
         
@@ -212,12 +216,12 @@ class Test_everything(ut.TestCase):
         s['dt'] = 170e-15
         s['steps'] = 1000
         s['continuous'] = True
-        s['a/mode'] = 0
+        s['a/enable'] = False
         s['iterations'] = 1
         
         # Now make sure the _transfer() process works, especially for ones 
         # having different names or units.
-        s._transfer_all_to_api()
+        s.transfer_to_api()
         self.assertEqual(s.api.a['T'], 270)
         self.assertEqual(s.api.b['T'], 270)
         self.assertEqual(s.api['a/X'], 0.777)
@@ -232,8 +236,8 @@ class Test_everything(ut.TestCase):
         
         # Now clear out the columns and let's test energy conservation
         s.plot_inspect.clear()
-        s['a/mode'] = 1
-        s['b/mode'] = 0
+        s['a/enable'] = True
+        s['b/enable'] = False
         
         s['a/X']       = -0.1
         s['a/Bx']      = 0.3
@@ -252,8 +256,8 @@ class Test_everything(ut.TestCase):
         # Same for other domain
         # Now clear out the columns and let's test energy conservation
         s.plot_inspect.clear()
-        s['a/mode'] = 0
-        s['b/mode'] = 1
+        s['a/enable'] = False
+        s['b/enable'] = True
         
         s['b/X']       = -0.1
         s['b/Bx']      = 0.3
@@ -270,6 +274,12 @@ class Test_everything(ut.TestCase):
         self.assertAlmostEqual(s['Ub'][0], s['Ub'][-1], 4)
         
         
+        # End with reasonable config for playtime.
+        s['a/enable'] = True
+        s['b/enable'] = False
+        s['damping']  = 0.01
+        s['T']        = 300
+        s['steps']    = 2e5
         
         # CLEANUP: Remove egg_settings for next time
         if os.path.exists('egg_settings'): shutil.rmtree('egg_settings')

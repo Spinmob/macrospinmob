@@ -85,10 +85,14 @@ class _domain(_c.Structure):
     # store the numpy arrays without them for easy user interfacing.
     _fields_ = [
         
+        # Whether to let it evolve
+        ('enable', _c.c_bool),
+        
         # Index of valid Langevin field
         ('n_langevin_valid', _c.c_long),
         
         # Temperature [K]
+        ('enable_T', _c.c_bool),
         ('T', _c.c_double), ("_Ts", _c.POINTER(_c.c_double)),
         
         # Volume of domain [m^3]
@@ -97,56 +101,56 @@ class _domain(_c.Structure):
         # Magnitude of the gyromagnetic ratio [radians / (sec T)]
         ('gyro', _c.c_double), ("_gyros", _c.POINTER(_c.c_double)),
         
-        #Gilbert damping parameter [unitless]
+        # Magnetization [T]
         ('M', _c.c_double), ("_Ms", _c.POINTER(_c.c_double)),
         
         # Gilbert damping
+        ('enable_damping', _c.c_bool),
         ('damping', _c.c_double), ('_dampings', _c.POINTER(_c.c_double)),
         
         # Exchange-like field strength [T], applied in the direction of the other domain's unit vector
+        ('enable_X', _c.c_bool),
         ('X', _c.c_double), ('_Xs', _c.POINTER(_c.c_double)),
         
         # Spin transfer torque (rate) parallel to other domain [rad / s]
-        ('STT', _c.c_double), ('_STTs', _c.POINTER(_c.c_double)),
+        ('enable_S', _c.c_bool),
+        ('S', _c.c_double), ('_Ss', _c.POINTER(_c.c_double)),
         
         # Other torQues (rate) unrelated to either domain [rad / s]
+        ('enable_Q', _c.c_bool),
         ('Qx', _c.c_double), ('_Qxs', _c.POINTER(_c.c_double)),
         ('Qy', _c.c_double), ('_Qys', _c.POINTER(_c.c_double)),
         ('Qz', _c.c_double), ('_Qzs', _c.POINTER(_c.c_double)),
         
-        # Externally applied field
+        # Externally applied field [T]
+        ('enable_B', _c.c_bool),
         ('Bx', _c.c_double), ('_Bxs', _c.POINTER(_c.c_double)),
         ('By', _c.c_double), ('_Bys', _c.POINTER(_c.c_double)),
         ('Bz', _c.c_double), ('_Bzs', _c.POINTER(_c.c_double)),
         
-        # Anisotropy tensor elements [unitless], defined such that Nxx+Nyy+Nzz=1 for an aligned ellipsoid
+        # Anisotropy tensor elements [T]
+        ('enable_N', _c.c_bool),
         ('Nxx', _c.c_double), ('_Nxxs', _c.POINTER(_c.c_double)),
         ('Nxy', _c.c_double), ('_Nxys', _c.POINTER(_c.c_double)),
         ('Nxz', _c.c_double), ('_Nxzs', _c.POINTER(_c.c_double)),
-    
         ('Nyx', _c.c_double), ('_Nyxs', _c.POINTER(_c.c_double)),
         ('Nyy', _c.c_double), ('_Nyys', _c.POINTER(_c.c_double)),
         ('Nyz', _c.c_double), ('_Nyzs', _c.POINTER(_c.c_double)),
-        
         ('Nzx', _c.c_double), ('_Nzxs', _c.POINTER(_c.c_double)),
         ('Nzy', _c.c_double), ('_Nzys', _c.POINTER(_c.c_double)),
         ('Nzz', _c.c_double), ('_Nzzs', _c.POINTER(_c.c_double)),
     
-        # Dipole tensor [unitless], representing the fraction of the other layer's saturation magnetization
+        # Dipole tensor [T]
+        ('enable_D', _c.c_bool),
         ('Dxx', _c.c_double), ('_Dxxs', _c.POINTER(_c.c_double)),
         ('Dxy', _c.c_double), ('_Dxys', _c.POINTER(_c.c_double)),
         ('Dxz', _c.c_double), ('_Dxzs', _c.POINTER(_c.c_double)),
-        
         ('Dyx', _c.c_double), ('_Dyxs', _c.POINTER(_c.c_double)),
         ('Dyy', _c.c_double), ('_Dyys', _c.POINTER(_c.c_double)),
         ('Dyz', _c.c_double), ('_Dyzs', _c.POINTER(_c.c_double)),
-        
         ('Dzx', _c.c_double), ('_Dzxs', _c.POINTER(_c.c_double)),
         ('Dzy', _c.c_double), ('_Dzys', _c.POINTER(_c.c_double)),
         ('Dzz', _c.c_double), ('_Dzzs', _c.POINTER(_c.c_double)),
-        
-        # Solver mode: 0=disabled, 1=LLG
-        ('mode', _c.c_int),
         
         # Initial conditions
         ('x0',   _c.c_double),
@@ -169,11 +173,15 @@ class _domain(_c.Structure):
         """
         Returns a list of keys that can be used in set() or get().
         """
-        return ['T', 'V', 'x0', 'y0', 'z0', 'gyro', 'M', 'damping', 'X', 'STT',
-                'Qx', 'Qy', 'Qz', 'Bx', 'By', 'Bz',
-                'Nxx', 'Nxy', 'Nxz', 'Nyx', 'Nyy', 'Nyz', 'Nzx', 'Nzy', 'Nzz',
-                'Dxx', 'Dxy', 'Dxz', 'Dyx', 'Dyy', 'Dyz', 'Dzx', 'Dzy', 'Dzz',
-                'mode']
+        return ['enable', 'V', 'x0', 'y0', 'z0', 'gyro', 'M', 
+                'enable_T', 'T', 
+                'enable_damping', 'damping', 
+                'enable_X', 'X', 
+                'enable_S', 'S',
+                'enable_Q', 'Qx', 'Qy', 'Qz', 
+                'enable_B', 'Bx', 'By', 'Bz',
+                'enable_N', 'Nxx', 'Nxy', 'Nxz', 'Nyx', 'Nyy', 'Nyz', 'Nzx', 'Nzy', 'Nzz',
+                'enable_D', 'Dxx', 'Dxy', 'Dxz', 'Dyx', 'Dyy', 'Dyz', 'Dzx', 'Dzy', 'Dzz']
     
     def set(self, key, value): 
         """
@@ -254,7 +262,7 @@ class _domain(_c.Structure):
         self['M']       = self.M
         self['damping'] = self.damping
         self['X']       = self.X
-        self['STT']     = self.STT
+        self['S']     = self.S
         
         self['Bx'] = self.Bx
         self['By'] = self.By
@@ -310,12 +318,12 @@ class solver_api():
         self['V']       = 1000e-27
         self['damping'] = 0.01
         self['X']       = 0
-        self['STT']     = 0
+        self['S']     = 0
         self['Bx']      = 0
         self['By']      = 0
         self['Bz']      = 1
         
-        # Initial conditions
+        # Default initial conditions
         self.a.x0   = 1.0
         self.a.y0   = 0.0
         self.a.z0   = 0.0
@@ -341,7 +349,7 @@ class solver_api():
         self.a._Ms       = self.b._Ms       = None
         self.a._dampings = self.b._dampings = None
         self.a._Xs       = self.b._Xs       = None
-        self.a._STTs     = self.b._STTs     = None
+        self.a._Ss     = self.b._Ss     = None
         
         self.a._Bxs    = self.b._Bxs    = None
         self.a._Bys    = self.b._Bys    = None
@@ -371,9 +379,26 @@ class solver_api():
         self.a._Dzys   = self.b._Dzys   = None
         self.a._Dzzs   = self.b._Dzzs   = None
         
-        # By default, enable the two domains.
-        self.a.mode=1
-        self.b.mode=1
+        # By default, enable the two domains and their components
+        self.a.enable   = True
+        self.a.enable_damping = True
+        self.a.enable_X = True
+        self.a.enable_T = True
+        self.a.enable_S = True
+        self.a.enable_B = True
+        self.a.enable_D = True
+        self.a.enable_N = True
+        self.a.enable_Q = True
+        
+        self.b.enable   = True
+        self.b.enable_damping = True
+        self.b.enable_X = True
+        self.b.enable_T = True
+        self.b.enable_S = True
+        self.b.enable_B = True
+        self.b.enable_D = True
+        self.b.enable_N = True
+        self.b.enable_Q = True
         
         # No solution arrays initially
         self.a._x  = self.a._y  = self.a._z  = None
@@ -616,9 +641,11 @@ class solver():
     """
     Graphical and scripted interface for the solver_api. Creating an instance
     should pop up a graphical interface.
+    
+    Keyword arguments are sent to self.set_multiple().
     """    
     
-    def __init__(self):
+    def __init__(self, **kwargs):
         
         # Timer ticks for benchmarking
         self._t0  = 0
@@ -637,6 +664,9 @@ class solver():
         # Set up the GUI
         self._build_gui()
     
+        # Send kwargs to set_multiple()
+        self.set_multiple(**kwargs)
+    
     def _build_gui(self):
         """
         Creates the window, puts all the widgets in there, and then shows it.
@@ -650,131 +680,168 @@ class solver():
         self.button_run        = self.grid_top.add(_g.Button('Go!', True))
         self.button_get_energy = self.grid_top.add(_g.Button('Get Energy')).disable()
         self.label_iteration   = self.grid_top.add(_g.Label(''))
+        self.grid_top.set_column_stretch(3)
         
         # Bottom row controls for settings and plots.
         self.window.new_autorow()
-        self.grid_bottom  = self.window     .add(_g.GridLayout(False), alignment=0)
-        
-        # Settings
-        self.settings     = self.grid_bottom.add(_g.TreeDictionary(autosettings_path='solver.settings.txt')).set_width(210)
-        
-        self.settings.add_parameter('solver/iterations', 0, limits=(0,None))
-        self.settings.add_parameter('solver/dt',     1e-12, dec=True,                  siPrefix=True, suffix='s')
-        self.settings.add_parameter('solver/steps',   5000, dec=True, limits=(2,None), siPrefix=True, suffix='steps')
-        self.settings.add_parameter('solver/continuous', False)
-        self.settings.add_parameter('solver/get_energy', False)
-        
-        self.settings.add_parameter('a/solver/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
-        
-        self.settings.add_parameter('a/initial/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
-        self.settings.add_parameter('a/initial/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
-        self.settings.add_parameter('a/initial/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
-        
-        self.settings.add_parameter('a/domain/T',               300, siPrefix=True, suffix='K', dec=True, bounds=(0,None), tip='Temperature [K] of the domain.')
-        self.settings.add_parameter('a/domain/gyro', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)',   tip='Magnitude of gyromagnetic ratio')
-        self.settings.add_parameter('a/domain/M',               1.0, siPrefix=True, suffix='T',           tip='Saturation magnetization [T] (that is, u0*Ms)')
-        self.settings.add_parameter('a/domain/V',          100*50*3, bounds=(1e-3, None), siPrefix=False, suffix=' nm^3', tip='Volume of domain [nm^3].')
-        self.settings.add_parameter('a/domain/damping',        0.01, step=0.01, tip='Gilbert damping parameter')        
-        
-        self.settings.add_parameter('a/applied_field', True)
-        self.settings.add_parameter('a/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
-        self.settings.add_parameter('a/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
-        self.settings.add_parameter('a/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
-        
-        self.settings.add_parameter('a/other_torques', True)
-        self.settings.add_parameter('a/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
-        self.settings.add_parameter('a/other_torques/STT', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
-        
-        self.settings.add_parameter('a/other_torques/Qx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('a/other_torques/Qy', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('a/other_torques/Qz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        
-        self.settings.add_parameter('a/anisotropy', True)
-        self.settings.add_parameter('a/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('a/anisotropy/Nyy', 0.10, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('a/anisotropy/Nzz', 0.89, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('a/anisotropy/Nxy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('a/anisotropy/Nxz', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('a/anisotropy/Nyx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('a/anisotropy/Nyz', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('a/anisotropy/Nzx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('a/anisotropy/Nzy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        
-        self.settings.add_parameter('a/dipole', True)
-        self.settings.add_parameter('a/dipole/Dxx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('a/dipole/Dyy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('a/dipole/Dzz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('a/dipole/Dxy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('a/dipole/Dxz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('a/dipole/Dyx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('a/dipole/Dyz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('a/dipole/Dzx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('a/dipole/Dzy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        
-        self.settings.add_parameter('b/solver/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
-        
-        self.settings.add_parameter('b/initial/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
-        self.settings.add_parameter('b/initial/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
-        self.settings.add_parameter('b/initial/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
-        
-        self.settings.add_parameter('b/domain/T',               300, siPrefix=True, suffix='K', dec=True, bounds=(0,None), tip='Temperature [K] of the domain.')
-        self.settings.add_parameter('b/domain/gyro', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)',   tip='Magnitude of gyromagnetic ratio')
-        self.settings.add_parameter('b/domain/M',               1.0, siPrefix=True, suffix='T',           tip='Saturation magnetization [T] (that is, u0*Ms)')
-        self.settings.add_parameter('b/domain/V',          100*50*3, bounds=(1e-3, None), siPrefix=False, suffix=' nm^3', tip='Volume of domain [nm^3].')
-        self.settings.add_parameter('b/domain/damping',        0.01, step=0.01, tip='Gilbert damping parameter')        
-        
-        self.settings.add_parameter('b/applied_field', True)
-        self.settings.add_parameter('b/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
-        self.settings.add_parameter('b/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
-        self.settings.add_parameter('b/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
-        
-        self.settings.add_parameter('b/other_torques', True)
-        self.settings.add_parameter('b/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
-        self.settings.add_parameter('b/other_torques/STT', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
-        
-        self.settings.add_parameter('b/other_torques/Qx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('b/other_torques/Qy', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('b/other_torques/Qz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        
-        self.settings.add_parameter('b/anisotropy', True)
-        self.settings.add_parameter('b/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('b/anisotropy/Nyy', 0.10, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('b/anisotropy/Nzz', 0.89, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('b/anisotropy/Nxy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('b/anisotropy/Nxz', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('b/anisotropy/Nyx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('b/anisotropy/Nyz', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('b/anisotropy/Nzx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        self.settings.add_parameter('b/anisotropy/Nzy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
-        
-        self.settings.add_parameter('b/dipole', True)
-        self.settings.add_parameter('b/dipole/Dxx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('b/dipole/Dyy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('b/dipole/Dzz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('b/dipole/Dxy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('b/dipole/Dxz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('b/dipole/Dyx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('b/dipole/Dyz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('b/dipole/Dzx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        self.settings.add_parameter('b/dipole/Dzy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.grid_bottom  = self.window.add(_g.GridLayout(False), alignment=0)
         
         
+        
+        
+        ### SOLVER
+        
+        self.settings_solver = self.grid_bottom.add(_g.TreeDictionary(autosettings_path='solver.settings_solver.txt')).set_width(220)
+        
+        self.settings_solver.add_parameter('solver/iterations', 0, limits=(0,None))
+        self.settings_solver.add_parameter('solver/dt',     1e-12, dec=True,                  siPrefix=True, suffix='s')
+        self.settings_solver.add_parameter('solver/steps',   5000, dec=True, limits=(2,None), siPrefix=True, suffix='steps')
+        self.settings_solver.add_parameter('solver/continuous', False)
+        self.settings_solver.add_parameter('solver/get_energy', False)
+        
+        
+        
+        ### DOMAIN A
+        
+        self.settings_a = self.grid_bottom.add(_g.TreeDictionary(autosettings_path='solver.settings_a.txt'), row_span=2).set_width(220)
+    
+        self.settings_a.add_parameter('a/enable', True, tip='Allow the domain to evolve')
+        
+        self.settings_a.add_parameter('a/initial/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings_a.add_parameter('a/initial/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings_a.add_parameter('a/initial/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        
+        self.settings_a.add_parameter('a/domain/gyro', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)',   tip='Magnitude of gyromagnetic ratio')
+        self.settings_a.add_parameter('a/domain/M',               1.0, siPrefix=True, suffix='T',           tip='Saturation magnetization [T] (that is, u0*Ms)')
+        self.settings_a.add_parameter('a/domain/V',          100*50*3, bounds=(1e-3, None), siPrefix=False, suffix=' nm^3', tip='Volume of domain [nm^3].')
+        
+        self.settings_a.add_parameter('a/temperature', True)
+        self.settings_a.add_parameter('a/temperature/T', 300, siPrefix=True, suffix='K', dec=True, bounds=(0,None), tip='Temperature [K] of the domain.')
+        
+        self.settings_a.add_parameter('a/dissipation', True)
+        self.settings_a.add_parameter('a/dissipation/damping', 0.01, step=0.01, tip='Gilbert damping parameter')        
+        
+        self.settings_a.add_parameter('a/applied_field', True)
+        self.settings_a.add_parameter('a/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        self.settings_a.add_parameter('a/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        self.settings_a.add_parameter('a/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        
+        self.settings_a.add_parameter('a/exchange', True)
+        self.settings_a.add_parameter('a/exchange/X',   0.0, siPrefix=True, suffix='T',     tip='Exchange field parallel to domain b\'s magnetization')
+        
+        self.settings_a.add_parameter('a/spin_transfer', True)
+        self.settings_a.add_parameter('a/spin_transfer/S', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, aligned with domain a\'s magnetization')
+        
+        self.settings_a.add_parameter('a/applied_torque', True)
+        self.settings_a.add_parameter('a/applied_torque/Qx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings_a.add_parameter('a/applied_torque/Qy', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings_a.add_parameter('a/applied_torque/Qz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        
+        self.settings_a.add_parameter('a/anisotropy', True)
+        self.settings_a.add_parameter('a/anisotropy/Nxx', 0.01, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_a.add_parameter('a/anisotropy/Nyy', 0.10, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_a.add_parameter('a/anisotropy/Nzz', 0.89, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_a.add_parameter('a/anisotropy/Nxy', 0.0,  siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_a.add_parameter('a/anisotropy/Nxz', 0.0,  siPrefix=True, suffix='T',tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_a.add_parameter('a/anisotropy/Nyx', 0.0,  siPrefix=True, suffix='T',tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_a.add_parameter('a/anisotropy/Nyz', 0.0,  siPrefix=True, suffix='T',tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_a.add_parameter('a/anisotropy/Nzx', 0.0,  siPrefix=True, suffix='T',tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_a.add_parameter('a/anisotropy/Nzy', 0.0,  siPrefix=True, suffix='T',tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        
+        self.settings_a.add_parameter('a/dipole', True)
+        self.settings_a.add_parameter('a/dipole/Dxx', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        self.settings_a.add_parameter('a/dipole/Dyy', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        self.settings_a.add_parameter('a/dipole/Dzz', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        self.settings_a.add_parameter('a/dipole/Dxy', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        self.settings_a.add_parameter('a/dipole/Dxz', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        self.settings_a.add_parameter('a/dipole/Dyx', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        self.settings_a.add_parameter('a/dipole/Dyz', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        self.settings_a.add_parameter('a/dipole/Dzx', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        self.settings_a.add_parameter('a/dipole/Dzy', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain b.')
+        
+        
+        
+        ### DOMAIN B
+        
+        self.settings_b = self.grid_bottom.add(_g.TreeDictionary(autosettings_path='solver.settings_b.txt'), row_span=2).set_width(220)
+        
+        self.settings_b.add_parameter('b/enable', False, tip='Allow the domain to evolve')
+        
+        self.settings_b.add_parameter('b/initial/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings_b.add_parameter('b/initial/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings_b.add_parameter('b/initial/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        
+        self.settings_b.add_parameter('b/domain/gyro', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)',   tip='Magnitude of gyromagnetic ratio')
+        self.settings_b.add_parameter('b/domain/M',               1.0, siPrefix=True, suffix='T',           tip='Saturation magnetization [T] (that is, u0*Ms)')
+        self.settings_b.add_parameter('b/domain/V',          100*50*3, bounds=(1e-3, None), siPrefix=False, suffix=' nm^3', tip='Volume of domain [nm^3].')
+        
+        self.settings_b.add_parameter('b/temperature', True)
+        self.settings_b.add_parameter('b/temperature/T',  300, siPrefix=True, suffix='K', dec=True, bounds=(0,None), tip='Temperature [K] of the domain.')
+        
+        self.settings_b.add_parameter('b/dissipation', True)
+        self.settings_b.add_parameter('b/dissipation/damping',       0.01, step=0.01, tip='Gilbert damping parameter')        
+        
+        self.settings_b.add_parameter('b/applied_field', True)
+        self.settings_b.add_parameter('b/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        self.settings_b.add_parameter('b/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        self.settings_b.add_parameter('b/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        
+        self.settings_b.add_parameter('b/exchange', True)
+        self.settings_b.add_parameter('b/exchange/X',   0.0, siPrefix=True, suffix='T',     tip='Exchange field parallel to domain b\'s magnetization')
+        
+        self.settings_b.add_parameter('b/spin_transfer', True)
+        self.settings_b.add_parameter('b/spin_transfer/S', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, aligned with domain b\'s magnetization')
+        
+        self.settings_b.add_parameter('b/applied_torque', True)
+        self.settings_b.add_parameter('b/applied_torque/Qx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings_b.add_parameter('b/applied_torque/Qy', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings_b.add_parameter('b/applied_torque/Qz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        
+        self.settings_b.add_parameter('b/anisotropy', True)
+        self.settings_b.add_parameter('b/anisotropy/Nxx', 0.01, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_b.add_parameter('b/anisotropy/Nyy', 0.10, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_b.add_parameter('b/anisotropy/Nzz', 0.89, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_b.add_parameter('b/anisotropy/Nxy', 0.0, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_b.add_parameter('b/anisotropy/Nxz', 0.0, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_b.add_parameter('b/anisotropy/Nyx', 0.0, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_b.add_parameter('b/anisotropy/Nyz', 0.0, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_b.add_parameter('b/anisotropy/Nzx', 0.0, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings_b.add_parameter('b/anisotropy/Nzy', 0.0, siPrefix=True, suffix='T', tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        
+        self.settings_b.add_parameter('b/dipole', True)
+        self.settings_b.add_parameter('b/dipole/Dxx', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        self.settings_b.add_parameter('b/dipole/Dyy', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        self.settings_b.add_parameter('b/dipole/Dzz', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        self.settings_b.add_parameter('b/dipole/Dxy', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        self.settings_b.add_parameter('b/dipole/Dxz', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        self.settings_b.add_parameter('b/dipole/Dyx', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        self.settings_b.add_parameter('b/dipole/Dyz', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        self.settings_b.add_parameter('b/dipole/Dzx', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        self.settings_b.add_parameter('b/dipole/Dzy', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
+        
+        
+        ### PLOTS AND PROCESSORS
         
         # Plot tabs
-        self.tabs = self.grid_bottom.add(_g.TabArea(autosettings_path='solver.tabs.txt'), alignment=0)
+        self.tabs_plot = self.grid_bottom.add(_g.TabArea(autosettings_path='solver.tabs_plot.txt'), alignment=0, row_span=2)
         
         # Inspection plot for all arrays
-        self.tab_inspect  = self.tabs.add_tab('Inspect')
+        self.tab_inspect  = self.tabs_plot.add_tab('Inspect')
         self.plot_inspect = self.tab_inspect.add(_g.DataboxPlot(autoscript=6, autosettings_path='solver.plot_inspect.txt'), alignment=0)
         self.initialize_plot_inspect()
         self.plot_inspect.after_clear = self.initialize_plot_inspect
         self.plot_inspect.autoscript_custom = self._user_script
         
         # Analysis of inspection
-        self.tab_process_inspect = self.tabs.add_tab('Process')
-        self.process_inspect = self.tab_process_inspect.add(_g.DataboxProcessor('process_inspect', self.plot_inspect), alignment=0)
+        self.tab_process1 = self.tabs_plot.add_tab('Process 1')
+        self.process1 = self.tab_process1.add(_g.DataboxProcessor('process1', self.plot_inspect), alignment=0)
+        self.tab_process2 = self.tabs_plot.add_tab('Process 2')
+        self.process2 = self.tab_process2.add(_g.DataboxProcessor('process2', self.process1.plot), alignment=0)
+        self.tab_process3 = self.tabs_plot.add_tab('Process 3')
+        self.process3 = self.tab_process3.add(_g.DataboxProcessor('process3', self.process2.plot), alignment=0)
         
-        self.tab_3d = self.tabs.add_tab('3D')
+        ### 3D
+        self.tab_3d = self.tabs_plot.add_tab('3D')
         self.button_3d_a   = self.tab_3d.add(_g.Button('a',   checkable=True, checked=True)) 
         self.button_3d_b   = self.tab_3d.add(_g.Button('b',   checkable=True, checked=False)) 
         self.button_3d_sum = self.tab_3d.add(_g.Button('Sum', checkable=True, checked=False)) 
@@ -826,47 +893,25 @@ class solver():
         self.button_3d_b   .signal_clicked.connect(self._button_plot_3d_clicked)
         self.button_3d_sum .signal_clicked.connect(self._button_plot_3d_clicked)
         self.button_plot_3d.signal_clicked.connect(self._button_plot_3d_clicked)
-         
-        # Create the test GUI
-        self._build_gui_test()
-
-        # Connect the other controls
-        self.button_run       .signal_clicked.connect(self._button_run_clicked)
-        self.button_get_energy.signal_clicked.connect(self._button_get_energy_clicked)
-        self.button_run_test  .signal_clicked.connect(self._button_run_test_clicked)
-
-        # Always update the start dots when we change a setting
-        self.settings.connect_any_signal_changed(self._update_start_dots)
-
-        # Add extra globals to the plotters
-        self.plot_inspect.plot_script_globals = dict(solver=self)
-        self.plot_test   .plot_script_globals = dict(solver=self)
-
-        # Let's have a look!
-        self.window.show()
-
-    def _build_gui_test(self):
-        """
-        Builds the test tab.
-        """        
         
-        # Test tab
-        self.tab_test        = self.tabs.add_tab('Test')
-        self.button_run_test = self.tab_test.add(_g.Button('Run Test!', checkable=True))
-        self.label_test      = self.tab_test.add(_g.Label(''))
-        self.label_test_info = self.tab_test.add(_g.Label(''))
-        self.tab_test.new_autorow()
         
-        self.settings_test  = self.tab_test.add(_g.TreeDictionary(autosettings_path='solver.settings_test.txt')) 
+        
+        
+        ### TESTS
+        self.grid_test       = self.grid_bottom.add(_g.GridLayout(False),0,1)
+        self.button_run_test = self.grid_test.add(_g.Button('Run Test'))
+        self.label_test      = self.grid_test.add(_g.Label(''))
+        self.grid_test.new_autorow()
+        self.settings_test   = self.grid_test.add(_g.TreeDictionary(autosettings_path='solver.settings_test.txt'),0,2, column_span=3).set_width(220)
+        self.grid_bottom.set_row_stretch(1)
         self.settings_test.add_parameter('test', 
-                                         ['thermal_noise',
-                                          'field_sweep'], 
-                                         tip='Which test to perform')
-        self.settings_test.add_parameter('iterations', 10, limits=(0,None), tip='How many test iterations')
+                                          ['thermal_noise',
+                                           'field_sweep'], tip='Which test to perform')
+        self.settings_test.add_parameter('iterations', 0, limits=(0,None), tip='How many test iterations to perform. Zero means "keep doing it."')
         
-        self.settings_test.add_parameter('thermal_noise/bins',      100, limits=(1,None), tip='How many bins for the histogram')
+        self.settings_test.add_parameter('thermal_noise/bins', 100, limits=(1,None), tip='How many bins for the histogram')
         
-        self.settings_test.add_parameter('field_sweep/steps',            100, limits=(1, None), dec=True)
+        self.settings_test.add_parameter('field_sweep/steps',  100, limits=(1, None), dec=True)
         self.settings_test.add_parameter('field_sweep/solver_iterations', 10, limits=(1,None), dec=True, tip='How many times to push "Go!" per step.')
         
         self.settings_test.add_parameter('field_sweep/B_start',      0.0, suffix='T',   tip='Start value.')
@@ -876,14 +921,29 @@ class solver():
         self.settings_test.add_parameter('field_sweep/phi_start',    0.0, suffix=' deg', tip='Start value of spherical coordinates angle from x-axis.')
         self.settings_test.add_parameter('field_sweep/phi_stop',     0.0, suffix=' deg', tip='Stop value of spherical coordinates angle from x-axis.')
         
-        self.plot_test   = self.tab_test.add(_g.DataboxPlot(autoscript=1, autosettings_path='solver.plot_test.txt'), alignment=0, column_span=10)
-        self.tab_test.set_column_stretch(7)
         
-        # Used for verifying that the continuous thermal field code is working properly.
-        self._previous_a_thermal_Bx = self._previous_a_thermal_By = self._previous_a_thermal_Bz = None
-        self._previous_b_thermal_Bx = self._previous_b_thermal_By = self._previous_b_thermal_Bz = None
+        ### CONNECT SIGNALS, PLOT GLOBALS
         
+        # Connect the other controls
+        self.button_run       .signal_clicked.connect(self._button_run_clicked)
+        self.button_run_test  .signal_clicked.connect(self._button_run_test_clicked)
+        self.button_get_energy.signal_clicked.connect(self._button_get_energy_clicked)
         
+        # Always update the start dots when we change a setting
+        self.settings_a.connect_any_signal_changed(self._update_start_dots)
+        self.settings_b.connect_any_signal_changed(self._update_start_dots)
+        
+        # Add extra globals to the plotters
+        self.plot_script_globals = dict(solver = self)
+        self.plot_inspect.plot_script_globals  = self.plot_script_globals
+        self.process1.plot.plot_script_globals = self.plot_script_globals
+        self.process2.plot.plot_script_globals = self.plot_script_globals
+        self.process3.plot.plot_script_globals = self.plot_script_globals
+        
+        # Let's have a look!
+        self.window.show()
+
+    
         
         
 
@@ -908,18 +968,18 @@ class solver():
         Gets the initial condition from the settings and updates the start
         dot positions.
         """
-        ax = self.settings['a/initial/x0']
-        ay = self.settings['a/initial/y0']
-        az = self.settings['a/initial/z0']
+        ax = self.settings_a['a/initial/x0']
+        ay = self.settings_a['a/initial/y0']
+        az = self.settings_a['a/initial/z0']
         an = 1.0/_n.sqrt(ax*ax+ay*ay+az*az)
         ax = ax*an
         ay = ay*an
         az = az*an
         
         
-        bx = self.settings['b/initial/x0']
-        by = self.settings['b/initial/y0']
-        bz = self.settings['b/initial/z0']
+        bx = self.settings_b['b/initial/x0']
+        by = self.settings_b['b/initial/y0']
+        bz = self.settings_b['b/initial/z0']
         bn = 1.0/_n.sqrt(bx*bx+by*by+bz*bz)
         bx = bx*bn
         by = by*bn
@@ -965,8 +1025,8 @@ class solver():
         """
 
         n = 0
-        N = self['iterations']
-        while (n < N or N < 1) and self.button_run.is_checked():
+        while (n < self['iterations'] or self['iterations'] < 1) \
+          and self.button_run.is_checked():
             
             # End time of previous run
             old_t3 = self._t3
@@ -977,8 +1037,8 @@ class solver():
             # Provide some user information
             self.label_iteration.set_text(
                 'Iteration ' + str(n+1) + 
-                ': Duty Cycle = %.2f, %.3f seconds/iteration' % 
-                ( (self._t2-self._t1)/(self._t3-old_t3), self._t3-old_t3 ))
+                ': Engine Time = %.3fs, Iteration Time = %.3fs, Duty Cycle = %.0f%%' % 
+                ( self._t2-self._t1, self._t3-old_t3, 100*(self._t2-self._t1)/(self._t3-old_t3) ))
             
             # Increment the counter
             n += 1
@@ -999,8 +1059,10 @@ class solver():
             self.plot_test.clear()
             
             # Send the settings in as header information
-            self.settings     .send_to_databox_header(self.plot_test)
             self.settings_test.send_to_databox_header(self.plot_test)
+            self.settings_a     .send_to_databox_header(self.plot_test)
+            self.settings_b     .send_to_databox_header(self.plot_test)
+            self.settings_solver.send_to_databox_header(self.plot_test)
     
             # Send iteration number to the header
             self.plot_test.h(n = n)
@@ -1026,7 +1088,9 @@ class solver():
         self.get_energy('b')
         self.plot_inspect['U'] = self.plot_inspect['Ua'] + self.plot_inspect['Ub']
         self.plot_inspect.plot()
-        self.process_inspect.run()
+        self.process1.run()
+        self.process2.run()
+        self.process3.run()
     
     def run(self):
         """
@@ -1046,7 +1110,7 @@ class solver():
         # like 'a/Bx' if they exist in the plot_inspect.
         self.api.a.clear_arrays()
         self.api.b.clear_arrays()
-        self._transfer_all_to_api()
+        self.transfer_to_api()
         
         # Initialization / transfer time
         self._t1 = _time.time()
@@ -1076,7 +1140,9 @@ class solver():
             
         # Update the plot and analyze the result
         self.plot_inspect.plot()
-        self.process_inspect.run()
+        self.process1.run()
+        self.process2.run()
+        self.process3.run()
         self._button_plot_3d_clicked()
         
         # Let the GUI catch up before moving on.
@@ -1108,23 +1174,51 @@ class solver():
         Transfers the domain's parameter to the solver data. key must be a 
         long form key.
         """
+        # Special cases: 'a' and 'b' are for a.enable and b.enable
+        if key == 'a':
+            self.api.a.enable = self['a']
+            return
+        if key == 'b': 
+            self.api.b.enable = self['b']
+            return
+
+        # Map of other enablers
+        e = {
+            'temperature'    : 'enable_T',
+            'dissipation'    : 'enable_damping',
+            'exchange'       : 'enable_X',
+            'spin_transfer'  : 'enable_S',
+            'applied_field'  : 'enable_B',
+            'anisotropy'     : 'enable_N',
+            'dipole'         : 'enable_D',
+            'applied_torque' : 'enable_Q',
+            }
+        
+        # s[0] is the domain, s[-1] is the parameter name
+        s = key.split('/')
+        
+        # If it's a category, set the bool
+        if s[-1] in e:
+            self.api[s[0]+'/'+e[s[-1]]] = self[key]
+            return
         
         # Do nothing for keys that aren't in the api, e.g. a category (defined above)
         if not self._api_key_exists(key): return        
         
-        # s[0] is the domain, s[-1] is the parameter name
-        s = key.split('/')
-
         # Check the plotter for array values, default to dictionary for normal values
         short_key = s[0]+'/'+s[-1]
         if short_key in self.plot_inspect.ckeys: 
               value = self.plot_inspect[short_key]    
-        else: value = self.settings[key]
+        elif s[0] == 'a': value = self.settings_a[key]
+        elif s[0] == 'b': value = self.settings_b[key]
+        elif s[0] == 'solver': value = self.settings_solver[key]
         
         # If it's under an unchecked category, zero it.
-        if s[1] in ['applied_field', 'other_torques', 'anisotropy', 'dipole'] \
-        and not self.settings[s[0]+'/'+s[1]]: value = 0
-        
+        if s[1] in ['applied_field', 'applied_torque', 'anisotropy', 'dipole']:
+            if s[0] == 'a' and not self.settings_a[s[0]+'/'+s[1]]: value = 0
+            if s[0] == 'b' and not self.settings_b[s[0]+'/'+s[1]]: value = 0
+            if s[0] == 'solver' and not self.settings_solver[s[0]+'/'+s[1]]: value = 0
+            
         # Rescale if necessary
         if s[-1] in self._rescale: value *= self._rescale[s[-1]]
         
@@ -1136,11 +1230,13 @@ class solver():
         try:    exec(command, dict(self=self, value=value))
         except: print('ERROR _transfer fail: "'+command+'"')
     
-    def _transfer_all_to_api(self):
+    def transfer_to_api(self):
         """
-        Loops over the settings keys and transfers them to the api.
+        Sends all the solver parameters to the api.
         """
-        for key in self.settings.keys(): self._transfer(key)
+        for key in self.settings_solver.keys(): self._transfer(key)
+        for key in self.settings_a     .keys(): self._transfer(key)
+        for key in self.settings_b     .keys(): self._transfer(key)
 
     def _elongate_domain_key(self, key):
         """
@@ -1149,27 +1245,20 @@ class solver():
         'b/something'
         """
         split = key.split('/')
+        if   split[0] == 'a': settings = self.settings_a
+        elif split[0] == 'b': settings = self.settings_b
+        elif split[0] == 'solver': settings = self.settings_solver
         
-        for k in self.settings.keys():
+        for k in settings.keys():
             s = k.split('/')
             if s[0] == split[0] and s[-1] == split[-1]: return k
         
         print('UH OH, could not elongate "'+key+'"')
         return key
-        
-    def _get_root(self, key):
-        """
-        Returns the first root found for the specified short key, or None
-        """
-        for k in self.settings.keys():
-            s = k.split('/')
-            if s[-1] == key: return s[0]
-            
-        return None    
     
     def set(self, key, value):
         """
-        Sets self.settings[key] = value, unless value is an array. In that case
+        Sets the specified key to a value, unless value is an array. In that case
         it sets self.plot_inspect[key] = value. 
         
         You can also skip the sub-heading, so self.set('a/x0',0.5) will work 
@@ -1196,7 +1285,7 @@ class solver():
         s = key.split('/')
         
         # If we're using a shortcut key, like 'dt' or 'T'
-        if len(s) == 1:            
+        if not s[0] in ['a','b','solver']:            
             
             # Solver parameter
             if s[0] in ['iterations', 'dt', 'steps', 'continuous', 'get_energy']:
@@ -1214,6 +1303,9 @@ class solver():
             print('ERROR solver.set(): Cannot set', key)
             return
         
+        # Assemble the short key
+        short_key = s[0]+'/'+s[-1]
+        
         # Arrays are stored in the inspect plotter, values go to settings
         if type(value) in [_n.ndarray, list]:
             
@@ -1221,11 +1313,23 @@ class solver():
             value = _n.array(value)
             
             # Use the short key for the ckey
-            s = key.split('/')
-            self.plot_inspect[s[0]+'/'+s[-1]] = value
+            
+            self.plot_inspect[short_key] = value
         
-        # Otherwise it's just a value. Update the tree.
-        else: self.settings[self._elongate_domain_key(key)] = value
+        # Otherwise it's just a value. Update the tree, and make sure 
+        # there isn't still a column of data for this parameter
+        elif s[0] == 'a': 
+            self.settings_a[self._elongate_domain_key(key)] = value
+            self.plot_inspect.pop_column(short_key, ignore_error=True)
+            
+        elif s[0] == 'b': 
+            self.settings_b[self._elongate_domain_key(key)] = value
+            self.plot_inspect.pop_column(short_key, ignore_error=True)
+            
+        elif s[0] == 'solver': 
+            self.settings_solver[self._elongate_domain_key(key)] = value
+        
+        else: print('ERROR: solver.set() should not reach here.')
         
         # Update plot
         self.plot_inspect.plot()
@@ -1261,7 +1365,7 @@ class solver():
 
         """
         # For solver settings, return them with simple keys
-        if key in ['dt', 'steps', 'continuous', 'T', 'iterations', 'get_energy']: return self.settings['solver/'+key]
+        if key in ['dt', 'steps', 'continuous', 'iterations', 'get_energy']: return self.settings_solver['solver/'+key]
         
         # If the key is right there in the plot_inspect, return that
         if key in self.plot_inspect.ckeys: return self.plot_inspect[key]
@@ -1277,17 +1381,19 @@ class solver():
         # Array value
         short_key = s[0]+'/'+s[-1]
         if short_key in self.plot_inspect.ckeys: return self.plot_inspect[short_key]
-        else: return self.settings[self._elongate_domain_key(key)]
-    
+        elif s[0] == 'a': return self.settings_a[self._elongate_domain_key(key)]
+        elif s[0] == 'b': return self.settings_b[self._elongate_domain_key(key)]
+        elif s[0] == 'solver': return self.settings_solver[self._elongate_domain_key(key)]
+        
     __getitem__ = get
     
-    def ns(self, n=0):
+    def get_ns(self, n=0):
         """
         Returns an array of integer indices for the n'th simulation iteration.
         
         Specifically, it returns 
         
-        _n.array(range(self['steps'])) + n*(self.settings['steps']-1)
+        _n.array(range(self['steps'])) + n*(self.settings_solver['steps']-1)
           
         The '-1' in the above is because the last step of the previous iteration
         is used to initialize the first step of the following iteration.
@@ -1297,44 +1403,54 @@ class solver():
         n=0 [integer]
             Which simulation iteration this corresponds to.
         """
-        return _n.array(range(self.settings['solver/steps'])) \
-               + n*(self.settings['solver/steps']-1)
+        return _n.array(range(self.settings_solver['solver/steps'])) \
+               + n*(self.settings_solver['solver/steps']-1)
 
-    def ts(self, n=0):
+    def get_ts(self, n=0):
         """
         Returns a time array for the n'th iteration as per the solver settings.
         
-        Specifically, it returns self.ns()*self.settings['solver/dt']
+        Specifically, it returns self.get_ns()*self.settings_solver['solver/dt']
         
         Parameters
         ----------
         n=0 [integer]
             Which iteration of the simulation
         """
-        return self.ns(n)*self.settings['solver/dt']
+        return self.get_ns(n)*self.settings_solver['solver/dt']
 
-    def zeros(self):
+    def get_zeros(self):
         """
         Returns a self['steps']-length array of zeros.
         """
         return _n.zeros(self['steps'])
 
-    def ones(self):
+    def get_ones(self):
         """
         Returns a self['steps']-length array of ones.
         """
         return _n.ones(self['steps'])
 
-    def pulse(self, n0, n1):
+    def get_pulse_n(self, n0, n1):
         """
         Returns an array of length self['steps'] that is zero everywhere except
         from n0 to n1-1.
         """
-        z = self.zeros()
+        z = self.get_zeros()
         z[n0:n1] = 1.0
         return z
     
-    def sin(self, frequency_GHz=1.0, phase_rad=0.0, n=0):
+    def get_pulse_t(self, t0, t1):
+        """
+        Returns an array of length self['steps'] that is zero everywhere except
+        where self.get_ts() (the time) is between t0 (inclusive) and t1 (not inclusive).
+        """
+        t = self.get_ts()
+        z = self.get_zeros()
+        z[_n.logical_and(t>=t0, t<t1)] = 1
+        return z
+        
+    def get_sin(self, frequency_GHz=1.0, phase_rad=0.0, n=0):
         """
         Returns an appropriately sized array of sinusoidal oscillations at
         frequency f_GHz [GHz] with phase p_rad [radians]. The integer n adds
@@ -1342,7 +1458,7 @@ class solver():
         you to generate a continuous sinusoid over many iterations.
         
         Specifically, the returned array is 
-        sin(2*pi*frequency_GHz*self.ts(n) + phase_rad)
+        sin(2*pi*frequency_GHz*self.get_ts(n) + phase_rad)
         
         Parameters
         ----------
@@ -1354,9 +1470,9 @@ class solver():
             Which iteration this is. You can use this integer to make a 
             continuous sinusoid over multiple iterations of the solver. 
         """
-        return _n.sin(2*_n.pi*frequency_GHz*1e9*self.ts(n)+phase_rad)
+        return _n.sin(2*_n.pi*frequency_GHz*1e9*self.get_ts(n)+phase_rad)
     
-    def cos(self, frequency_GHz=1.0, phase_rad=0.0, n=0):
+    def get_cos(self, frequency_GHz=1.0, phase_rad=0.0, n=0):
         """
         Returns an appropriately sized array of sinusoidal oscillations at
         frequency f_GHz [GHz] with phase p_rad [radians]. The integer n adds
@@ -1364,7 +1480,7 @@ class solver():
         you to generate a continuous sinusoid over many iterations.
         
         Specifically, the returned array is 
-        cos(2*pi*frequency_GHz*self.ts(n) + phase_rad)
+        cos(2*pi*frequency_GHz*self.get_ts(n) + phase_rad)
         
         Parameters
         ----------
@@ -1376,36 +1492,30 @@ class solver():
             Which iteration this is. You can use this integer to make a 
             continuous sinusoid over multiple iterations of the solver. 
         """
-        return _n.cos(2*_n.pi*frequency_GHz*1e9*self.ts(n)+phase_rad)
+        return _n.cos(2*_n.pi*frequency_GHz*1e9*self.get_ts(n)+phase_rad)
             
-    def spin_torque_per_mA(self, domain='a', efficiency=1.0, volume_nm3=100*100*10):
+    def get_stt_per_mA(self, domain='a'):
         """
         Returns the torque per milliamp [rad/(s*mA)] that would be applied when
-        spin polarization is perpendicular to a magnetization 
-        self[domain+'/M'] [T] filling the specified volume_nm3 [nm^3]. This can 
-        basically be used to calculate the prefactor on the a x (a x s) term in
+        spin polarization is perpendicular to the magnetization. This can 
+        be used to calculate the prefactor on the a x (a x s) term in
         the LLG equation, where a is the domain unit vector, and s is the 
-        spin polarization unit vector, which, for this simulation has units of
-        [rad/s].
+        spin polarization unit vector. This assumes an efficiency of 1, so if,
+        e.g., only 0.7 of the participating electrons deposit their hbar/4 on 
+        average, the output of this function should be scaled by 0.7.
         
         Parameters
         ----------
         domain='a'
             Which domain receives the spin transfer torque. The only domain-
-            specific parameters used are gyro and M.
-            
-        efficiency=1.0 [unitless]
-            How electron spins are deposited on average per passing electron.
-            
-        volume_nm3=100*100*10 [nm^3]
-            Total volume of the magnetic domain in cubic nanometers.
+            specific parameters used are gyro, M, and V.
         
         Returns
         -------
         The torque per mA [rad/(s*mA)] applied to a unit vector.
         """
-        return efficiency*self[domain+'/gyro']*hbar*1e-3 / \
-               (2*ec*(self[domain+'/M']/u0)*volume_nm3*1e-27)
+        return self[domain+'/gyro']*hbar*1e-3 / \
+               (2*ec*(self[domain+'/M']/u0)*self[domain+'/V']*1e-27)
     
     def get_energy(self, domain='a'):
         """
@@ -1474,7 +1584,7 @@ class solver():
         else: Dx = Dy = Dz = 0
     
         # Exchange
-        if self[a+'/other_torques']:
+        if self[a+'/exchange']:
             Xx = self[a+'/X'] * bx
             Xy = self[a+'/X'] * by
             Xz = self[a+'/X'] * bz
@@ -1509,7 +1619,7 @@ class solver():
         #     self.plot_test.styles.append(dict(symbol='+', symbolPen='#FF7777', pen=None))
         #
         # Bin everything from this run.
-        # Na, bins = _n.histogram(self.plot_inspect['U'+a], self.settings_test['thermal_noise/bins'])
+        # Na, bins = _n.histogram(self.plot_inspect['U'+a], self.settings_solver['thermal_noise/bins'])
             
         # # Get x-axis from the midpoints of the bin edges
         # Ta = 0.5*(bins[1:]+bins[0:len(bins)-1])/kB
@@ -1535,7 +1645,7 @@ class solver():
         # Make sure the temperature is not zero (otherwise we're hosed)
         if self['T'] == 0: self['T'] = 293; # Why not.
     
-        # Make sure it's in continuous mode, with one iteration
+        # Make sure it's a continuous simulation with one iteration
         self['continuous'] = True
         self['iterations'] = 1
                 
@@ -1552,8 +1662,8 @@ class solver():
         # MAGNETIC ENERGY CALCULATION #
         ###############################
     
-        if self['a/mode']: self.get_magnetic_energy('a')
-        if self['b/mode']: self.get_magnetic_energy('b')
+        if self['a']: self.get_magnetic_energy('a')
+        if self['b']: self.get_magnetic_energy('b')
         
         # Plot
         self.plot_inspect.plot()
@@ -1567,17 +1677,17 @@ class solver():
         """
         
         # Get the arrays of values
-        Bs     = _n.linspace(self.settings_test['field_sweep/B_start'],
-                             self.settings_test['field_sweep/B_stop'],
-                             self.settings_test['field_sweep/steps'])
+        Bs     = _n.linspace(self.settings_solver['field_sweep/B_start'],
+                             self.settings_solver['field_sweep/B_stop'],
+                             self.settings_solver['field_sweep/steps'])
         
-        thetas = _n.linspace(self.settings_test['field_sweep/theta_start'],
-                             self.settings_test['field_sweep/theta_stop'],
-                             self.settings_test['field_sweep/steps'])
+        thetas = _n.linspace(self.settings_solver['field_sweep/theta_start'],
+                             self.settings_solver['field_sweep/theta_stop'],
+                             self.settings_solver['field_sweep/steps'])
         
-        phis   = _n.linspace(self.settings_test['field_sweep/phi_start'],
-                             self.settings_test['field_sweep/phi_stop'],
-                             self.settings_test['field_sweep/steps'])
+        phis   = _n.linspace(self.settings_solver['field_sweep/phi_start'],
+                             self.settings_solver['field_sweep/phi_stop'],
+                             self.settings_solver['field_sweep/steps'])
         
         # Loop over the number of steps
         n = 0
@@ -1611,7 +1721,7 @@ class solver():
             
             # Loop over the number of solver iterations, pushing go and plotting
             m = 0
-            while m < self.settings_test['field_sweep/solver_iterations'] \
+            while m < self.settings_solver['field_sweep/solver_iterations'] \
               and self.button_run_test.is_checked():
                 
                 # Push Go!
@@ -1625,10 +1735,10 @@ class solver():
                 new_ckeys = ['step', 'iteration', 'B', 'theta', 'phi', 'Bx', 'By', 'Bz']
                 
                 # Domain data
-                if self['a/mode']:
+                if self['a']:
                     new_data  = new_data  + [_n.mean(self['ax']), _n.mean(self['ay']), _n.mean(self['az'])]
                     new_ckeys = new_ckeys + ['ax', 'ay', 'az']
-                if self['b/mode']:
+                if self['b']:
                     new_data  = new_data  + [_n.mean(self['bx']), _n.mean(self['by']), _n.mean(self['bz'])]
                     new_ckeys = new_ckeys + ['bx', 'by', 'bz']
                 
@@ -1652,8 +1762,7 @@ class solver():
 
 if __name__ == '__main__':
     
-    import macrospinmob
-    runfile(macrospinmob.__path__[0] + '/_tests/test_everything.py')
-    
+    # import macrospinmob; runfile(macrospinmob.__path__[0] + '/_tests/test_everything.py')
+    self = solver()
     
     
