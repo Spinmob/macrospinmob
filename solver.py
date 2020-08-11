@@ -820,6 +820,32 @@ class solver():
         self.settings_b.add_parameter('b/dipole/Dzy', 0.0, siPrefix=True, suffix='T', tip='Dipolar field matrix exerted by domain a.')
         
         
+        ### TESTS
+        self.grid_test       = self.grid_bottom.add(_g.GridLayout(False),0,1)
+        self.button_run_test = self.grid_test.add(_g.Button('Run Test'))
+        self.label_test      = self.grid_test.add(_g.Label(''))
+        self.grid_test.new_autorow()
+        self.settings_test   = self.grid_test.add(_g.TreeDictionary(autosettings_path='solver.settings_test.txt'),0,2, column_span=3).set_width(220)
+        self.grid_bottom.set_row_stretch(1)
+        self.settings_test.add_parameter('test', 
+                                          ['thermal_noise',
+                                           'field_sweep'], tip='Which test to perform')
+        self.settings_test.add_parameter('iterations', 0, limits=(0,None), tip='How many test iterations to perform. Zero means "keep doing it."')
+        
+        self.settings_test.add_parameter('thermal_noise/bins', 100, limits=(1,None), tip='How many bins for the histogram')
+        
+        self.settings_test.add_parameter('field_sweep/steps',  100, limits=(1, None), dec=True)
+        self.settings_test.add_parameter('field_sweep/solver_iterations', 10, limits=(1,None), dec=True, tip='How many times to push "Go!" per step.')
+        
+        self.settings_test.add_parameter('field_sweep/B_start',      0.0, suffix='T',   tip='Start value.')
+        self.settings_test.add_parameter('field_sweep/B_stop',       0.0, suffix='T',   tip='Stop value.')
+        self.settings_test.add_parameter('field_sweep/theta_start', 90.0, suffix=' deg', tip='Start value of spherical coordinates angle from z-axis.')
+        self.settings_test.add_parameter('field_sweep/theta_stop',  90.0, suffix=' deg', tip='Stop value of spherical coordinates angle from z-axis.')
+        self.settings_test.add_parameter('field_sweep/phi_start',    0.0, suffix=' deg', tip='Start value of spherical coordinates angle from x-axis.')
+        self.settings_test.add_parameter('field_sweep/phi_stop',     0.0, suffix=' deg', tip='Stop value of spherical coordinates angle from x-axis.')
+        
+        
+        
         ### PLOTS AND PROCESSORS
         
         # Plot tabs
@@ -834,11 +860,11 @@ class solver():
         
         # Analysis of inspection
         self.tab_process1 = self.tabs_plot.add_tab('Process 1')
-        self.process1 = self.tab_process1.add(_g.DataboxProcessor('process1', self.plot_inspect), alignment=0)
+        self.process1     = self.tab_process1.add(_g.DataboxProcessor('process1'), alignment=0)
         self.tab_process2 = self.tabs_plot.add_tab('Process 2')
-        self.process2 = self.tab_process2.add(_g.DataboxProcessor('process2', self.process1.plot), alignment=0)
+        self.process2     = self.tab_process2.add(_g.DataboxProcessor('process2'), alignment=0)
         self.tab_process3 = self.tabs_plot.add_tab('Process 3')
-        self.process3 = self.tab_process3.add(_g.DataboxProcessor('process3', self.process2.plot), alignment=0)
+        self.process3     = self.tab_process3.add(_g.DataboxProcessor('process3'), alignment=0)
         
         ### 3D
         self.tab_3d = self.tabs_plot.add_tab('3D')
@@ -895,31 +921,18 @@ class solver():
         self.button_plot_3d.signal_clicked.connect(self._button_plot_3d_clicked)
         
         
+        ### OTHER PLOTTERS
+        self.tab_plot1 = self.tabs_plot.add_tab('User Plot 1')
+        self.plot1     = self.tab_plot1.add(_g.DataboxPlot(autoscript=6, autosettings_path='solver.plot_a.txt'), alignment=0)
+        self.tab_plot2 = self.tabs_plot.add_tab('User Plot 2')
+        self.plot2     = self.tab_plot2.add(_g.DataboxPlot(autoscript=6, autosettings_path='solver.plot_b.txt'), alignment=0)
+        
+        self.tab_process4 = self.tabs_plot.add_tab('User Process 4')
+        self.process4     = self.tab_process4.add(_g.DataboxProcessor('process4'), alignment=0)
+        self.tab_process5 = self.tabs_plot.add_tab('User Process 5')
+        self.process5     = self.tab_process5.add(_g.DataboxProcessor('process5'), alignment=0)
         
         
-        ### TESTS
-        self.grid_test       = self.grid_bottom.add(_g.GridLayout(False),0,1)
-        self.button_run_test = self.grid_test.add(_g.Button('Run Test'))
-        self.label_test      = self.grid_test.add(_g.Label(''))
-        self.grid_test.new_autorow()
-        self.settings_test   = self.grid_test.add(_g.TreeDictionary(autosettings_path='solver.settings_test.txt'),0,2, column_span=3).set_width(220)
-        self.grid_bottom.set_row_stretch(1)
-        self.settings_test.add_parameter('test', 
-                                          ['thermal_noise',
-                                           'field_sweep'], tip='Which test to perform')
-        self.settings_test.add_parameter('iterations', 0, limits=(0,None), tip='How many test iterations to perform. Zero means "keep doing it."')
-        
-        self.settings_test.add_parameter('thermal_noise/bins', 100, limits=(1,None), tip='How many bins for the histogram')
-        
-        self.settings_test.add_parameter('field_sweep/steps',  100, limits=(1, None), dec=True)
-        self.settings_test.add_parameter('field_sweep/solver_iterations', 10, limits=(1,None), dec=True, tip='How many times to push "Go!" per step.')
-        
-        self.settings_test.add_parameter('field_sweep/B_start',      0.0, suffix='T',   tip='Start value.')
-        self.settings_test.add_parameter('field_sweep/B_stop',       0.0, suffix='T',   tip='Stop value.')
-        self.settings_test.add_parameter('field_sweep/theta_start', 90.0, suffix=' deg', tip='Start value of spherical coordinates angle from z-axis.')
-        self.settings_test.add_parameter('field_sweep/theta_stop',  90.0, suffix=' deg', tip='Stop value of spherical coordinates angle from z-axis.')
-        self.settings_test.add_parameter('field_sweep/phi_start',    0.0, suffix=' deg', tip='Start value of spherical coordinates angle from x-axis.')
-        self.settings_test.add_parameter('field_sweep/phi_stop',     0.0, suffix=' deg', tip='Stop value of spherical coordinates angle from x-axis.')
         
         
         ### CONNECT SIGNALS, PLOT GLOBALS
@@ -934,7 +947,13 @@ class solver():
         self.settings_b.connect_any_signal_changed(self._update_start_dots)
         
         # Add extra globals to the plotters
-        self.plot_script_globals = dict(solver = self)
+        self.plot_script_globals = dict(solver = self,
+                                        plot_inspect1
+                                        plot1  = self.plot1,
+                                        plot2  = self.plot2,
+                                        process1 = self.process1,
+                                        process2 = self.process2
+                                        )
         self.plot_inspect.plot_script_globals  = self.plot_script_globals
         self.process1.plot.plot_script_globals = self.plot_script_globals
         self.process2.plot.plot_script_globals = self.plot_script_globals
@@ -1088,10 +1107,7 @@ class solver():
         self.get_energy('b')
         self.plot_inspect['U'] = self.plot_inspect['Ua'] + self.plot_inspect['Ub']
         self.plot_inspect.plot()
-        self.process1.run()
-        self.process2.run()
-        self.process3.run()
-    
+        
     def run(self):
         """
         Run the specified simulation.
@@ -1140,9 +1156,9 @@ class solver():
             
         # Update the plot and analyze the result
         self.plot_inspect.plot()
-        self.process1.run()
-        self.process2.run()
-        self.process3.run()
+        self.process1.run(self.plot_inspect)
+        self.process2.run(self.process1.plot)
+        self.process3.run(self.process2.plot)
         self._button_plot_3d_clicked()
         
         # Let the GUI catch up before moving on.
@@ -1609,6 +1625,12 @@ class solver():
         -------
         self
         """
+
+        
+
+
+
+
 
         # # Add plot styles
         # if a == 'a':
