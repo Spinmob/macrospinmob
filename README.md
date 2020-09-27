@@ -1,3 +1,5 @@
+![Screenshot](https://raw.githubusercontent.com/Spinmob/macrospinmob/master/images/screenshot.png)
+
 # Macrospin(mob)
 
 This library provides fast simulations of 1 or 2 magnetic spins. The key feature is that you can specify arbitary time-dependent fields, spin torques, exchange constants, dipole tensors, anisotropy tensors, temperatures, and other torques. A graphical front-end is also provided, allowing visualization and analysis while it runs.
