@@ -700,7 +700,7 @@ class solver():
 
         self.settings_solver.add_parameter('solver/iterations', 0, bounds=(0,None))
         self.settings_solver.add_parameter('solver/dt',     1e-12, dec=True,                  siPrefix=True, suffix='s')
-        self.settings_solver.add_parameter('solver/steps',   5000, dec=True, bounds=(2,None), siPrefix=True, suffix='steps')
+        self.settings_solver.add_parameter('solver/steps', 5000.0, dec=True, bounds=(2,None), siPrefix=True, suffix='steps')
         self.settings_solver.add_parameter('solver/continuous', False)
         self.settings_solver.add_parameter('solver/get_energy', False)
 
@@ -831,7 +831,7 @@ class solver():
         self.label_test      = self.grid_test.add(_g.Label(''))
         self.grid_test.new_autorow()
         self.settings_test   = self.grid_test.add(_g.TreeDictionary(autosettings_path='solver.settings_test.txt'),0,2, column_span=3).set_width(250)
-        self.grid_bottom.set_row_stretch(1)
+        self.grid_bottom.set_row_stretch(0)
         self.settings_test.add_parameter('test',
                                           ['thermal_noise',
                                            'field_sweep'], tip='Which test to perform')
@@ -1405,8 +1405,8 @@ class solver():
         n=0 [integer]
             Which simulation iteration this corresponds to.
         """
-        return _n.array(range(self.settings_solver['solver/steps'])) \
-               + n*(self.settings_solver['solver/steps']-1)
+        return _n.array(range(int(self.settings_solver['solver/steps']))) \
+               + n*(int(self.settings_solver['solver/steps']-1))
 
     def get_ts(self, n=0):
         """
@@ -1425,13 +1425,13 @@ class solver():
         """
         Returns a self['steps']-length array of zeros.
         """
-        return _n.zeros(self['steps'])
+        return _n.zeros(int(self['steps']))
 
     def get_ones(self):
         """
         Returns a self['steps']-length array of ones.
         """
-        return _n.ones(self['steps'])
+        return _n.ones(int(self['steps']))
 
     def get_pulse_n(self, n0, n1):
         """
