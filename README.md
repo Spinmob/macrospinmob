@@ -8,13 +8,7 @@ This package is currently under development, it seems to work, but it has yet to
 
 ## Installing
 
-Macrospin(mob) is built upon [Spinmob](https://github.com/Spinmob/spinmob/wiki) and uses [PyQtGraph](http://www.pyqtgraph.org/) for fast plotting. You can install these yourself, or follow the recommended approach:
-
-To install spinmob:
-```
-conda install numpy scipy matplotlib pyqtgraph spyder pyopengl
-pip install spinmob
-```
+Macrospin(mob) is built upon [Spinmob](https://github.com/Spinmob/spinmob/wiki) and uses [PyQtGraph](http://www.pyqtgraph.org/) for fast plotting. You can install these yourself, or follow the [recommended approach](https://github.com/Spinmob/spinmob/wiki#2-install-spinmob).
 
 To install Macrospin(mob), you can just clone the repository directory into your python's site-packages directory. We'll eventually make this a pip package... Once we have field-tested it a bit more.
 
