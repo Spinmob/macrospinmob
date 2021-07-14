@@ -688,7 +688,7 @@ class solver():
 
 
         ### SETTINGS TABS
-        self.tabs_settings = self.grid_bottom.add(_g.TabArea(autosettings_path='solver.tabs_settings'))
+        self.tabs_settings = self.grid_bottom.add(_g.TabArea(autosettings_path='solver.tabs_settings'), alignment=1)
         self.tab_solver = self.tabs_settings.add('Solver')
         self.tab_a      = self.tabs_settings.add('a')
         self.tab_b      = self.tabs_settings.add('b')
