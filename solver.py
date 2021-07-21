@@ -1452,7 +1452,7 @@ class solver():
         z[_n.logical_and(t>=t0, t<t1)] = 1
         return z
 
-    def get_sin(self, frequency_GHz=1.0, phase_rad=0.0, n=0):
+    def get_sin(self, n=0, frequency_GHz=1.0, phase_rad=0.0):
         """
         Returns an appropriately sized array of sinusoidal oscillations at
         frequency f_GHz [GHz] with phase p_rad [radians]. The integer n adds
@@ -1464,17 +1464,17 @@ class solver():
 
         Parameters
         ----------
+        n=0 [integer]
+            Which iteration this is. You can use this integer to make a
+            continuous sinusoid over multiple iterations of the solver.
         frequency_GHz [GHz]
             Frequency of oscillation in GHz.
         phase_rad [radians]
             Phase in radians.
-        n=0 [integer]
-            Which iteration this is. You can use this integer to make a
-            continuous sinusoid over multiple iterations of the solver.
         """
         return _n.sin(2*_n.pi*frequency_GHz*1e9*self.get_ts(n)+phase_rad)
 
-    def get_cos(self, frequency_GHz=1.0, phase_rad=0.0, n=0):
+    def get_cos(self, n=0, frequency_GHz=1.0, phase_rad=0.0):
         """
         Returns an appropriately sized array of sinusoidal oscillations at
         frequency f_GHz [GHz] with phase p_rad [radians]. The integer n adds
