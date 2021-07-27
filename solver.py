@@ -1499,9 +1499,9 @@ class solver():
     def get_stt_per_mA(self, domain='a'):
         """
         Returns the torque per milliamp [rad/(s*mA)] that would be applied when
-        spin polarization is perpendicular to the magnetization. This can
-        be used to calculate the prefactor on the a x (a x s) term in
-        the LLG equation, where a is the domain unit vector, and s is the
+        spin polarization is perpendicular to the magnetization. This can, for
+        example, be used to calculate the prefactor on the a x (a x s) term in
+        the LLGS equation, where a is the domain unit vector, and s is the
         spin polarization unit vector. This assumes an efficiency of 1, so if,
         e.g., only 0.7 of the participating electrons deposit their hbar/4 on
         average, the output of this function should be scaled by 0.7.
